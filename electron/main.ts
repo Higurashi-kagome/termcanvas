@@ -152,6 +152,7 @@ import {
   unstageHunk,
   getBlame,
 } from "./git-info";
+import { parseNulSeparatedGitPaths } from "./git-paths";
 import { createMenu } from "./menu";
 import { isSelectAllShortcutInput } from "./select-all-shortcut";
 import { isReloadShortcutInput } from "./reload-shortcut";
@@ -1680,7 +1681,7 @@ function setupIpc() {
       trackedOutput = await new Promise<string>((resolve, reject) => {
         execFile(
           "git",
-          ["ls-files", "--cached", "--others", "--exclude-standard"],
+          ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
           { cwd: dirPath, timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
           (err, stdout) => (err ? reject(err) : resolve(stdout)),
         );
@@ -1721,26 +1722,43 @@ function setupIpc() {
 
     return {
       type: "git" as const,
-      paths: trackedOutput.split("\n").filter(Boolean),
+      paths: parseNulSeparatedGitPaths(trackedOutput),
     };
   });
 
   ipcMain.handle("fs:list-ignored-files", async (_event, dirPath: string) => {
     const { execFile } = await import("child_process");
+    const runGit = (args: string[]) =>
+      new Promise<string>((resolve, reject) => {
+        execFile(
+          "git",
+          args,
+          { cwd: dirPath, timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
+          (err, out) => (err ? reject(err) : resolve(out)),
+        );
+      });
     try {
       if (!(await isGitRepo(dirPath))) {
         return [] as string[];
       }
 
-      const stdout = await new Promise<string>((resolve, reject) => {
-        execFile(
-          "git",
-          ["ls-files", "--others", "--ignored", "--exclude-standard"],
-          { cwd: dirPath, timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
-          (err, out) => (err ? reject(err) : resolve(out)),
-        );
-      });
-      return stdout.split("\n").filter(Boolean);
+      const [filesOutput, dirsOutput] = await Promise.all([
+        runGit(["ls-files", "-z", "--others", "--ignored", "--exclude-standard"]),
+        runGit([
+          "ls-files",
+          "-z",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory",
+        ]),
+      ]);
+      return [
+        ...new Set([
+          ...parseNulSeparatedGitPaths(dirsOutput),
+          ...parseNulSeparatedGitPaths(filesOutput),
+        ]),
+      ];
     } catch (err) {
       console.warn(`[fs:list-ignored-files] failed:`, err);
       return [] as string[];

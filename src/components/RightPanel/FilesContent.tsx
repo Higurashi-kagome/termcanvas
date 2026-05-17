@@ -16,7 +16,7 @@ import { useT } from "../../i18n/useT";
 import { useCanvasStore } from "../../stores/canvasStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { ContextMenu, type MenuItem } from "../ContextMenu";
-import type { GitFileStatus } from "../../types";
+import type { GitFileStatus, GitStatusEntry } from "../../types";
 
 interface Props {
   worktreePath: string | null;
@@ -54,6 +54,143 @@ const STATUS_PRIORITY: Record<GitFileStatus, number> = {
 
 const NEW_ENTRY_PREFIX = "__pierre_new_";
 
+export function buildPierreGitStatus(
+  changedFiles: GitStatusEntry[],
+  stagedFiles: GitStatusEntry[],
+  ignoredPaths: string[],
+): PierreGitStatusEntry[] {
+  const statusMap = new Map<string, GitFileStatus>();
+  for (const entry of [...changedFiles, ...stagedFiles]) {
+    const existing = statusMap.get(entry.path);
+    if (
+      !existing ||
+      STATUS_PRIORITY[entry.status] < STATUS_PRIORITY[existing]
+    ) {
+      statusMap.set(entry.path, entry.status);
+    }
+  }
+  const result: PierreGitStatusEntry[] = [];
+  for (const [path, status] of statusMap) {
+    const mapped = GIT_STATUS_MAP[status];
+    if (mapped) result.push({ path, status: mapped });
+  }
+
+  // `fs:list-ignored-files` includes ignored directory paths from Git's
+  // --directory mode. Do not infer ancestors here: a rule like
+  // src/generated/*.js ignores one file, not the whole src/ tree.
+  const ignoredStatusPaths = new Set<string>();
+  for (const path of ignoredPaths) {
+    ignoredStatusPaths.add(path);
+  }
+  for (const path of ignoredStatusPaths) {
+    result.push({ path, status: "ignored" });
+  }
+  return result;
+}
+
+function stripDirectorySlash(path: string): string {
+  return path.endsWith("/") ? path.slice(0, -1) : path;
+}
+
+function getPathBasename(path: string): string {
+  const stripped = stripDirectorySlash(path);
+  const index = stripped.lastIndexOf("/");
+  const name = index === -1 ? stripped : stripped.slice(index + 1);
+  return path.endsWith("/") ? `${name}/` : name;
+}
+
+function collectAncestorDirectoryPaths(path: string): string[] {
+  const stripped = stripDirectorySlash(path);
+  if (!stripped) return [];
+  const segments = stripped.split("/");
+  const maxDepth = path.endsWith("/") ? segments.length : segments.length - 1;
+  const directories: string[] = [];
+  for (let depth = 1; depth <= maxDepth; depth += 1) {
+    directories.push(`${segments.slice(0, depth).join("/")}/`);
+  }
+  return directories;
+}
+
+function sortPathsDeepestFirst(paths: readonly string[]): string[] {
+  return [...paths].sort((a, b) => {
+    const depthDelta = b.split("/").length - a.split("/").length;
+    return depthDelta !== 0 ? depthDelta : b.length - a.length;
+  });
+}
+
+export function collectStaleAncestorDirectories(
+  previousPaths: readonly string[],
+  nextPaths: readonly string[],
+  preservedPaths: readonly string[],
+): string[] {
+  const nextPathSet = new Set(nextPaths);
+  const liveDirectoryPaths = new Set<string>();
+  for (const path of [...nextPaths, ...preservedPaths]) {
+    for (const directory of collectAncestorDirectoryPaths(path)) {
+      liveDirectoryPaths.add(directory);
+    }
+  }
+
+  const candidates = new Set<string>();
+  for (const path of previousPaths) {
+    if (nextPathSet.has(path)) continue;
+    for (const directory of collectAncestorDirectoryPaths(path)) {
+      candidates.add(directory);
+    }
+  }
+
+  return sortPathsDeepestFirst(
+    [...candidates].filter((directory) => !liveDirectoryPaths.has(directory)),
+  );
+}
+
+function resolveDropDestinationPath(
+  sourcePath: string,
+  targetDirectoryPath: string | null,
+): string {
+  const basename = getPathBasename(sourcePath);
+  if (targetDirectoryPath == null) return basename;
+  return `${targetDirectoryPath}${basename}`;
+}
+
+export function applyFileTreeDrop(
+  paths: string[],
+  draggedPaths: readonly string[],
+  targetDirectoryPath: string | null,
+): string[] {
+  const moves = draggedPaths.map((source) => ({
+    from: source,
+    to: resolveDropDestinationPath(source, targetDirectoryPath),
+  }));
+  return paths.map((path) => {
+    for (const move of moves) {
+      if (path === move.from) return move.to;
+      if (move.from.endsWith("/") && path.startsWith(move.from)) {
+        return `${move.to}${path.slice(move.from.length)}`;
+      }
+    }
+    return path;
+  });
+}
+
+export function buildFileTreeMoveRequests(
+  worktreePath: string,
+  draggedPaths: readonly string[],
+  targetDirectoryPath: string | null,
+): Array<{ from: string; to: string }> {
+  return draggedPaths
+    .map((sourcePath) => {
+      const sourceRel = stripDirectorySlash(sourcePath);
+      const destinationRel = stripDirectorySlash(
+        resolveDropDestinationPath(sourcePath, targetDirectoryPath),
+      );
+      return {
+        from: `${worktreePath}/${sourceRel}`,
+        to: `${worktreePath}/${destinationRel}`,
+      };
+    })
+    .filter((move) => move.from !== move.to);
+}
 export function FilesContent({ worktreePath, onFileClick }: Props) {
   const t = useT();
   const { paths, ignoredPaths, refresh } = useWorktreeFiles(worktreePath);
@@ -61,31 +198,10 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
   const fileEditorPath = useCanvasStore((s) => s.fileEditorPath);
   const { notify } = useNotificationStore.getState();
 
-  const pierreGitStatus = useMemo<PierreGitStatusEntry[]>(() => {
-    const statusMap = new Map<string, GitFileStatus>();
-    for (const entry of [...changedFiles, ...stagedFiles]) {
-      const existing = statusMap.get(entry.path);
-      if (
-        !existing ||
-        STATUS_PRIORITY[entry.status] < STATUS_PRIORITY[existing]
-      ) {
-        statusMap.set(entry.path, entry.status);
-      }
-    }
-    const result: PierreGitStatusEntry[] = [];
-    for (const [path, status] of statusMap) {
-      const mapped = GIT_STATUS_MAP[status];
-      if (mapped) result.push({ path, status: mapped });
-    }
-    // Ignored paths are mutually exclusive with the M/A/D/R/C/U/? statuses
-    // above (git only reports those for tracked or non-ignored untracked
-    // files), so we can append without dedup. The library renders these via
-    // --trees-theme-git-ignored-fg.
-    for (const path of ignoredPaths) {
-      result.push({ path, status: "ignored" });
-    }
-    return result;
-  }, [changedFiles, stagedFiles, ignoredPaths]);
+  const pierreGitStatus = useMemo<PierreGitStatusEntry[]>(
+    () => buildPierreGitStatus(changedFiles, stagedFiles, ignoredPaths),
+    [changedFiles, stagedFiles, ignoredPaths],
+  );
 
   const worktreePathRef = useRef(worktreePath);
   worktreePathRef.current = worktreePath;
@@ -95,6 +211,12 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+
+  const pathsRef = useRef(paths);
+  pathsRef.current = paths;
+
+  const ignoredPathsRef = useRef(ignoredPaths);
+  ignoredPathsRef.current = ignoredPaths;
 
   // Tracks the currently open file (relative to worktreePath) so the row
   // decoration renderer — which is fixed at model construction — can read the
@@ -225,12 +347,24 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
 
     const oldSet = new Set(synced.paths);
     const newSet = new Set(paths);
+    const removedSet = new Set(synced.paths.filter((p) => !newSet.has(p)));
+    const staleAncestorDirs = collectStaleAncestorDirectories(
+      synced.paths,
+      paths,
+      ignoredPathsRef.current,
+    );
     const ops: FileTreeBatchOperation[] = [];
-    for (const p of synced.paths) {
-      if (!newSet.has(p)) ops.push({ path: p, type: "remove" });
+    for (const p of sortPathsDeepestFirst(synced.paths)) {
+      if (!newSet.has(p)) {
+        ops.push({ path: p, type: "remove", recursive: p.endsWith("/") });
+      }
     }
     for (const p of paths) {
       if (!oldSet.has(p)) ops.push({ path: p, type: "add" });
+    }
+    for (const p of staleAncestorDirs) {
+      if (removedSet.has(p)) continue;
+      ops.push({ path: p, type: "remove", recursive: true });
     }
     if (ops.length === 0) {
       trackedSyncRef.current = { model, wt: wtKey, paths };
@@ -291,8 +425,22 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
 
     if (toRemove.length) {
       const ops: FileTreeBatchOperation[] = [];
-      for (const p of toRemove) {
-        if (model.getItem(p) != null) ops.push({ path: p, type: "remove" });
+      const removedSet = new Set(toRemove);
+      const staleAncestorDirs = collectStaleAncestorDirectories(
+        synced?.paths ?? [],
+        ignoredPaths,
+        pathsRef.current,
+      );
+      for (const p of sortPathsDeepestFirst(toRemove)) {
+        if (model.getItem(p) != null) {
+          ops.push({ path: p, type: "remove", recursive: p.endsWith("/") });
+        }
+      }
+      for (const p of staleAncestorDirs) {
+        if (removedSet.has(p)) continue;
+        if (model.getItem(p) != null) {
+          ops.push({ path: p, type: "remove", recursive: true });
+        }
       }
       if (ops.length) {
         try {
