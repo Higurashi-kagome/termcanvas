@@ -12,6 +12,32 @@ export interface SessionInfo {
   tokenTotal: number;
 }
 
+export interface SessionHistoryNode {
+  sessionId: string;
+  provider: "claude" | "codex" | "kimi";
+  projectDir: string;
+  filePath: string;
+  firstPrompt: string;
+  startedAt: string;
+  lastActivityAt: string;
+  treeLastActivityAt: string;
+  parentSessionId?: string;
+  rootSessionId: string;
+  depth: number;
+  relationshipSource: "confirmed" | "none";
+  hasChildren: boolean;
+  childCount: number;
+  children: SessionHistoryNode[];
+}
+
+export interface SessionHistoryProjectTree {
+  projectDir: string;
+  roots: SessionHistoryNode[];
+  sessionCount: number;
+  rootCount: number;
+  latestActivityAt: string;
+}
+
 export interface SessionHistoryChangedEvent {
   reason:
     | "session_attached"
