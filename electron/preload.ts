@@ -543,6 +543,10 @@ contextBridge.exposeInMainWorld("termcanvas", {
         }>;
         total: number;
       }>,
+    listSessionTrees: (projectDirs: string[]) =>
+      ipcRenderer.invoke("search:sessions:list-trees", projectDirs) as Promise<
+        import("../shared/sessions").SessionHistoryProjectTree[]
+      >,
   },
   state: {
     load: () => ipcRenderer.invoke("state:load"),

@@ -2,6 +2,11 @@
 
 All notable changes to TermCanvas will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Session history tree**: the left-panel history view still groups by project, but now renders only confirmed parent-child session relationships as a recursive tree so main sessions stay easier to spot when sub-sessions accumulate. Sessions without a confirmed relationship still render as roots.
+
 ## [0.39.5] - 2026-05-01
 
 ### Added

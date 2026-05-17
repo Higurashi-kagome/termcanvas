@@ -51,29 +51,16 @@ import {
   CollapsibleTrigger,
 } from "./ui/collapsible";
 import {
-  groupHistoryByProject,
+  collectVisibleHistoryRoots,
+  hideHistorySubtree,
+  resolvePinnedHistoryRoot,
   shouldRefreshHistorySection,
 } from "./historySectionModel";
+import type {
+  SessionHistoryNode,
+  SessionHistoryProjectTree,
+} from "../../shared/sessions";
 
-/**
- * Descriptor returned by `search:sessions:list`. Kept local to avoid
- * exporting a shared interface just for this panel.
- */
-interface HistorySessionEntry {
-  sessionId: string;
-  provider: "claude" | "codex" | "kimi";
-  projectDir: string;
-  filePath: string;
-  firstPrompt: string;
-  startedAt: string;
-  lastActivityAt: string;
-  estimatedMessageCount: number;
-  fileSize: number;
-}
-
-// Load enough entries upfront to cover most real-world canvases without
-// a second fetch. Users who want more per-project can expand inline.
-const HISTORY_PAGE_SIZE = 100;
 // Each project group shows this many sessions by default.
 const HISTORY_GROUP_DEFAULT_LIMIT = 7;
 const HISTORY_REFRESH_DEBOUNCE_MS = 120;
@@ -855,23 +842,22 @@ export function HistorySection({
   showHeader?: boolean;
 }) {
   const [expanded, setExpanded] = useState(showHeader);
-  const [entries, setEntries] = useState<HistorySessionEntry[]>([]);
-  const [total, setTotal] = useState(0);
+  const [projectTrees, setProjectTrees] = useState<SessionHistoryProjectTree[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [hidden, setHidden] = useState<Set<string>>(() => loadHiddenSessions());
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinnedSessions());
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   // Groups folded via the chevron header click.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
-  // Per-group display limit. Absent = HISTORY_GROUP_DEFAULT_LIMIT. Each
-  // "show more" click increments by HISTORY_GROUP_DEFAULT_LIMIT.
+  // Per-project root display limit. Absent = HISTORY_GROUP_DEFAULT_LIMIT.
   const [groupLimits, setGroupLimits] = useState<Map<string, number>>(
     new Map(),
   );
-  // Groups currently fetching more sessions from the server.
-  const [loadingGroups, setLoadingGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = useCallback((projectDir: string) => {
     setCollapsedGroups((prev) => {
@@ -882,61 +868,48 @@ export function HistorySection({
     });
   }, []);
 
+  const toggleNode = useCallback((sessionId: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
   const hideSession = useCallback((sessionId: string) => {
     setHidden((prev) => {
-      if (prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.add(sessionId);
+      const next = projectTrees.reduce(
+        (acc, tree) => hideHistorySubtree(acc, tree.roots, sessionId),
+        prev,
+      );
       persistHiddenSessions(next);
       return next;
     });
-  }, []);
+  }, [projectTrees]);
 
-  const showMoreInGroup = useCallback(
-    (projectDir: string, currentLimit: number, loadedCount: number) => {
-      const nextLimit = currentLimit + HISTORY_GROUP_DEFAULT_LIMIT;
-      // If the next page would exceed what's loaded, fetch more from the server first.
-      if (
-        nextLimit > loadedCount &&
-        window.termcanvas?.search?.listSessionsPage
-      ) {
-        setLoadingGroups((prev) => new Set(prev).add(projectDir));
-        void window.termcanvas.search
-          .listSessionsPage([projectDir], { limit: nextLimit, offset: 0 })
-          .then((page) => {
-            setEntries((prev) => {
-              const seen = new Set(prev.map((e) => e.sessionId));
-              const merged = [...prev];
-              for (const e of page.entries) {
-                if (!seen.has(e.sessionId)) merged.push(e);
-              }
-              return merged;
-            });
-          })
-          .finally(() => {
-            setLoadingGroups((prev) => {
-              const next = new Set(prev);
-              next.delete(projectDir);
-              return next;
-            });
-            setGroupLimits((prev) => new Map(prev).set(projectDir, nextLimit));
-          });
-      } else {
-        setGroupLimits((prev) => new Map(prev).set(projectDir, nextLimit));
-      }
-    },
-    [],
-  );
+  const showMoreInGroup = useCallback((projectDir: string, currentLimit: number) => {
+    const nextLimit = currentLimit + HISTORY_GROUP_DEFAULT_LIMIT;
+    setGroupLimits((prev) => new Map(prev).set(projectDir, nextLimit));
+  }, []);
 
   const pinSession = useCallback((sessionId: string) => {
     setPinned((prev) => {
-      if (prev.has(sessionId)) return prev;
+      let rootId: string | null = null;
+      for (const tree of projectTrees) {
+        rootId = resolvePinnedHistoryRoot(tree.roots, sessionId);
+        if (rootId) break;
+      }
+      if (!rootId || prev.has(rootId)) return prev;
       const next = new Set(prev);
-      next.add(sessionId);
+      next.add(rootId);
       persistPinnedSessions(next);
       return next;
     });
-  }, []);
+  }, [projectTrees]);
 
   const unpinSession = useCallback((sessionId: string) => {
     setPinned((prev) => {
@@ -952,25 +925,22 @@ export function HistorySection({
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!window.termcanvas?.search?.listSessionsPage) return;
+    if (!window.termcanvas?.search?.listSessionTrees) return;
     if (projectDirs.length === 0) {
-      setEntries([]);
-      setTotal(0);
+      setProjectTrees([]);
       return;
     }
     let cancelled = false;
     setLoading(true);
     void window.termcanvas.search
-      .listSessionsPage(projectDirs, { limit: HISTORY_PAGE_SIZE, offset: 0 })
-      .then((page) => {
+      .listSessionTrees(projectDirs)
+      .then((trees) => {
         if (cancelled) return;
-        setEntries(page.entries);
-        setTotal(page.total);
+        setProjectTrees(trees);
       })
       .catch(() => {
         if (cancelled) return;
-        setEntries([]);
-        setTotal(0);
+        setProjectTrees([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -999,35 +969,55 @@ export function HistorySection({
     };
   }, [projectDirsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visibleEntries = useMemo(
-    () => entries.filter((e) => !hidden.has(e.sessionId)),
-    [entries, hidden],
-  );
-
-  const pinnedEntries = useMemo(
+  const visibleTrees = useMemo(
     () =>
-      visibleEntries
-        .filter((e) => pinned.has(e.sessionId))
-        .sort(
-          (a, b) =>
-            new Date(b.lastActivityAt).getTime() -
-            new Date(a.lastActivityAt).getTime(),
-        ),
-    [visibleEntries, pinned],
+      projectTrees
+        .map((tree) => filterProjectTree(tree, hidden))
+        .filter((tree): tree is SessionHistoryProjectTree => tree !== null),
+    [projectTrees, hidden],
   );
 
-  const unpinnedEntries = useMemo(
-    () => visibleEntries.filter((e) => !pinned.has(e.sessionId)),
-    [visibleEntries, pinned],
+  const pinnedProjectTrees = useMemo(
+    () =>
+      visibleTrees
+        .map((tree) => {
+          const roots = tree.roots.filter((root) => pinned.has(root.sessionId));
+          if (roots.length === 0) return null;
+          return {
+            ...tree,
+            roots,
+          };
+        })
+        .filter((tree): tree is SessionHistoryProjectTree => tree !== null),
+    [visibleTrees, pinned],
   );
 
-  const groups = useMemo(
-    () => groupHistoryByProject(unpinnedEntries),
-    [unpinnedEntries],
+  const unpinnedProjectTrees = useMemo(
+    () =>
+      visibleTrees
+        .map((tree) => ({
+          ...tree,
+          roots: tree.roots.filter((root) => !pinned.has(root.sessionId)),
+        }))
+        .filter((tree) => tree.roots.length > 0),
+    [visibleTrees, pinned],
   );
 
-  const countLabel =
-    loading && entries.length === 0 ? "…" : `${entries.length}`;
+  const countLabel = loading
+    ? "…"
+    : `${visibleTrees.reduce((sum, tree) => sum + tree.sessionCount, 0)}`;
+
+  const historyEmpty = !loading && visibleTrees.length === 0;
+
+  const childCountLabel = useCallback(
+    (count: number) =>
+      (
+        t.sessions_history_children_count as
+          | ((n: number) => string)
+          | undefined
+      )?.(count) ?? `${count}`,
+    [t],
+  );
 
   return (
     <div className={showHeader ? "border-t border-[var(--border)]" : ""}>
@@ -1061,7 +1051,7 @@ export function HistorySection({
       )}
       {(expanded || !showHeader) && (
         <div className="pb-2">
-          {entries.length === 0 ? (
+          {historyEmpty ? (
             <div
               className="tc-label px-4 py-6 text-center"
               role="status"
@@ -1075,7 +1065,7 @@ export function HistorySection({
             </div>
           ) : (
             <div className="flex flex-col">
-              {pinnedEntries.length > 0 && (
+              {pinnedProjectTrees.length > 0 && (
                 <div className="mb-0.5">
                   <div className="mx-2 flex min-h-[30px] items-center gap-1.5 rounded-md px-3 py-0">
                     <svg
@@ -1112,37 +1102,49 @@ export function HistorySection({
                       className="tc-caption ml-auto tabular-nums"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      {pinnedEntries.length}
+                      {pinnedProjectTrees.reduce(
+                        (sum, tree) => sum + tree.roots.length,
+                        0,
+                      )}
                     </span>
                   </div>
-                  {pinnedEntries.map((entry) => (
-                    <HistoryRow
-                      key={entry.sessionId}
-                      entry={entry}
-                      isPinned={true}
-                      onOpen={onOpen}
-                      onHide={hideSession}
-                      onPin={pinSession}
-                      onUnpin={unpinSession}
-                    />
-                  ))}
+                  {pinnedProjectTrees.map((tree) =>
+                    tree.roots.map((root) => (
+                      <HistoryTreeRow
+                        key={root.sessionId}
+                        node={root}
+                        depth={0}
+                        expandedNodes={expandedNodes}
+                        isPinned={true}
+                        childCountLabel={childCountLabel}
+                        onToggleExpand={toggleNode}
+                        onOpen={onOpen}
+                        onHide={hideSession}
+                        onPin={pinSession}
+                        onUnpin={unpinSession}
+                        t={t}
+                      />
+                    )),
+                  )}
                 </div>
               )}
-              {groups.map((group) => {
-                const isCollapsed = collapsedGroups.has(group.projectDir);
+              {unpinnedProjectTrees.map((tree) => {
+                const isCollapsed = collapsedGroups.has(tree.projectDir);
                 const limit =
-                  groupLimits.get(group.projectDir) ??
+                  groupLimits.get(tree.projectDir) ??
                   HISTORY_GROUP_DEFAULT_LIMIT;
-                const displayEntries = group.entries.slice(0, limit);
-                const hiddenCount =
-                  group.entries.length - displayEntries.length;
+                const displayRoots = collectVisibleHistoryRoots(
+                  tree.roots,
+                  limit,
+                );
+                const hiddenCount = tree.roots.length - displayRoots.length;
                 return (
-                  <div key={group.projectDir} className="mb-0.5 last:mb-0">
+                  <div key={tree.projectDir} className="mb-0.5 last:mb-0">
                     <button
                       type="button"
                       className="tc-row-hover group/grp mx-2 flex min-h-[30px] items-center gap-1.5 rounded-md px-3 py-0 text-left cursor-pointer"
-                      onClick={() => toggleGroup(group.projectDir)}
-                      title={group.projectDir}
+                      onClick={() => toggleGroup(tree.projectDir)}
+                      title={tree.projectDir}
                     >
                       <span className="shrink-0 flex items-center justify-center text-[var(--text-muted)]">
                         <svg
@@ -1170,40 +1172,40 @@ export function HistorySection({
                           lineHeight: "var(--leading-snug)",
                         }}
                       >
-                        {historyProjectName(group.projectDir)}
+                        {historyProjectName(tree.projectDir)}
                       </span>
                       <span
                         className="tc-caption tabular-nums"
                         style={{ color: "var(--text-muted)" }}
                       >
-                        {group.entries.length}
+                        {tree.sessionCount}
                       </span>
                     </button>
                     {!isCollapsed && (
                       <>
-                        {displayEntries.map((entry) => (
-                          <HistoryRow
-                            key={entry.sessionId}
-                            entry={entry}
-                            isPinned={pinned.has(entry.sessionId)}
+                        {displayRoots.map((root) => (
+                          <HistoryTreeRow
+                            key={root.sessionId}
+                            node={root}
+                            depth={0}
+                            expandedNodes={expandedNodes}
+                            isPinned={pinned.has(root.sessionId)}
+                            childCountLabel={childCountLabel}
+                            onToggleExpand={toggleNode}
                             onOpen={onOpen}
                             onHide={hideSession}
                             onPin={pinSession}
                             onUnpin={unpinSession}
+                            t={t}
                           />
                         ))}
                         {hiddenCount > 0 && (
                           <button
                             type="button"
                             className="tc-row-icon mx-2 flex min-h-[30px] items-center gap-1 rounded-md pl-6 pr-3 py-0 text-left tc-timestamp hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-hover)] disabled:opacity-50 disabled:cursor-default"
-                            disabled={loadingGroups.has(group.projectDir)}
                             onClick={(e) => {
                               e.stopPropagation();
-                              showMoreInGroup(
-                                group.projectDir,
-                                limit,
-                                group.entries.length,
-                              );
+                              showMoreInGroup(tree.projectDir, limit);
                             }}
                           >
                             <svg
@@ -1220,9 +1222,7 @@ export function HistorySection({
                                 strokeLinecap="round"
                               />
                             </svg>
-                            {loadingGroups.has(group.projectDir)
-                              ? "Loading…"
-                              : `${hiddenCount} more`}
+                            {`${hiddenCount} more`}
                           </button>
                         )}
                       </>
@@ -1238,22 +1238,40 @@ export function HistorySection({
   );
 }
 
-function HistoryRow({
-  entry,
+function HistoryTreeRow({
+  node,
+  depth,
+  expandedNodes,
   isPinned,
+  childCountLabel,
+  onToggleExpand,
   onOpen,
   onHide,
   onPin,
   onUnpin,
+  t,
 }: {
-  entry: HistorySessionEntry;
+  node: SessionHistoryNode;
+  depth: number;
+  expandedNodes: ReadonlySet<string>;
   isPinned: boolean;
+  childCountLabel: (count: number) => string;
+  onToggleExpand: (sessionId: string) => void;
   onOpen: (filePath: string) => void;
   onHide: (sessionId: string) => void;
   onPin: (sessionId: string) => void;
   onUnpin: (sessionId: string) => void;
+  t: ReturnType<typeof useT>;
 }) {
   const [pendingHide, setPendingHide] = useState(false);
+  const isExpanded = expandedNodes.has(node.sessionId);
+  const pinLabel = (
+    t.sessions_history_pin_tree as string | undefined
+  ) ?? "Pin tree to top";
+  const unpinLabel = "Unpin from top";
+  const hideLabel = (
+    t.sessions_history_hide_tree as string | undefined
+  ) ?? "Hide subtree from history";
 
   useEffect(() => {
     if (!pendingHide) return;
@@ -1262,134 +1280,230 @@ function HistoryRow({
   }, [pendingHide]);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="tc-row-hover group mx-2 flex min-h-[44px] items-center gap-1.5 rounded-md pl-4 pr-2 py-1.5 text-left cursor-pointer"
-      onClick={() => onOpen(entry.filePath)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(entry.filePath);
-        }
-      }}
-      title={`${entry.firstPrompt}\n${entry.provider}`}
-    >
-      {/* Left pin slot — fixed width so content never shifts */}
-      <span
-        className={
-          "shrink-0 flex items-center justify-center w-4 transition-opacity " +
-          (isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100")
-        }
-      >
-        <IconButton
-          size="sm"
-          tone="neutral"
-          label={isPinned ? "Unpin from top" : "Pin to top"}
-          className={isPinned ? "!text-[var(--accent)]" : ""}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isPinned) onUnpin(entry.sessionId);
-            else onPin(entry.sessionId);
-          }}
-        >
-          {isPinned ? (
-            <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-              <circle cx="7" cy="4.5" r="2.5" fill="currentColor" />
-              <line
-                x1="5.2"
-                y1="6.3"
-                x2="2.5"
-                y2="9"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-              />
-            </svg>
-          ) : (
-            <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-              <circle
-                cx="7"
-                cy="4.5"
-                r="2.5"
-                stroke="currentColor"
-                strokeWidth="1.1"
-              />
-              <line
-                x1="5.2"
-                y1="6.3"
-                x2="2.5"
-                y2="9"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-              />
-            </svg>
-          )}
-        </IconButton>
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div
-          className="truncate"
-          style={{
-            fontSize: "var(--text-sm)",
-            fontWeight: "var(--weight-regular)",
-            color: "var(--text-primary)",
-            lineHeight: "var(--leading-snug)",
-          }}
-        >
-          {entry.firstPrompt || `(session ${entry.sessionId.slice(0, 8)})`}
-        </div>
-        <div className="mt-0.5 tc-timestamp">
-          {formatHistoryAge(entry.lastActivityAt)}
-        </div>
-      </div>
-
-      {/* Two-step hide: first click arms (red), second executes permanently */}
-      <span
-        className={
-          "shrink-0 transition-opacity " +
-          (pendingHide ? "opacity-100" : "opacity-0 group-hover:opacity-100")
-        }
-      >
-        <IconButton
-          size="sm"
-          tone={pendingHide ? "danger" : "neutral"}
-          label={
-            pendingHide
-              ? "Click again to hide permanently"
-              : "Hide from history"
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        className="tc-row-hover group mx-2 flex min-h-[44px] items-center gap-1.5 rounded-md pr-2 py-1.5 text-left cursor-pointer"
+        style={{ paddingLeft: `${16 + depth * 14}px` }}
+        onClick={() => onOpen(node.filePath)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen(node.filePath);
           }
-          className={pendingHide ? "bg-[var(--red-soft)]" : ""}
+        }}
+        title={`${node.firstPrompt}\n${node.provider}`}
+      >
+        <button
+          type="button"
+          className="shrink-0 flex items-center justify-center w-4 h-4 text-[var(--text-muted)]"
           onClick={(e) => {
             e.stopPropagation();
-            if (pendingHide) {
-              onHide(entry.sessionId);
-            } else {
-              setPendingHide(true);
+            if (node.hasChildren) {
+              onToggleExpand(node.sessionId);
             }
           }}
-          onBlur={() => setPendingHide(false)}
+          aria-label={node.hasChildren ? "Toggle session subtree" : undefined}
         >
-          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M1 6c1.2-2.3 3-3.5 5-3.5s3.8 1.2 5 3.5c-1.2 2.3-3 3.5-5 3.5S2.2 8.3 1 6z"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M2 10L10 2"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-            />
-          </svg>
-        </IconButton>
-      </span>
-    </div>
+          {node.hasChildren ? (
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              className="shrink-0"
+              style={{
+                transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                transition:
+                  "transform var(--duration-quick) var(--ease-out-soft)",
+              }}
+            >
+              <path d="M3 2l4 3-4 3z" fill="currentColor" />
+            </svg>
+          ) : null}
+        </button>
+        {/* Left pin slot — fixed width so content never shifts */}
+        <span
+          className={
+            "shrink-0 flex items-center justify-center w-4 transition-opacity " +
+            (isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100")
+          }
+        >
+          <IconButton
+            size="sm"
+            tone="neutral"
+            label={isPinned ? unpinLabel : pinLabel}
+            className={isPinned ? "!text-[var(--accent)]" : ""}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isPinned) onUnpin(node.sessionId);
+              else onPin(node.sessionId);
+            }}
+          >
+            {isPinned ? (
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
+                <circle cx="7" cy="4.5" r="2.5" fill="currentColor" />
+                <line
+                  x1="5.2"
+                  y1="6.3"
+                  x2="2.5"
+                  y2="9"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
+                <circle
+                  cx="7"
+                  cy="4.5"
+                  r="2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.1"
+                />
+                <line
+                  x1="5.2"
+                  y1="6.3"
+                  x2="2.5"
+                  y2="9"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+          </IconButton>
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate"
+            style={{
+              fontSize: "var(--text-sm)",
+              fontWeight: "var(--weight-regular)",
+              color: "var(--text-primary)",
+              lineHeight: "var(--leading-snug)",
+            }}
+          >
+            {node.firstPrompt || `(session ${node.sessionId.slice(0, 8)})`}
+          </div>
+          <div className="mt-0.5 tc-timestamp">
+            {depth === 0
+              ? formatHistoryAge(node.treeLastActivityAt)
+              : formatHistoryAge(node.lastActivityAt)}
+            {node.hasChildren ? ` · ${childCountLabel(node.childCount)}` : ""}
+          </div>
+        </div>
+
+        {/* Two-step hide: first click arms (red), second executes permanently */}
+        <span
+          className={
+            "shrink-0 transition-opacity " +
+            (pendingHide ? "opacity-100" : "opacity-0 group-hover:opacity-100")
+          }
+        >
+          <IconButton
+            size="sm"
+            tone={pendingHide ? "danger" : "neutral"}
+            label={pendingHide ? "Click again to hide permanently" : hideLabel}
+            className={pendingHide ? "bg-[var(--red-soft)]" : ""}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (pendingHide) {
+                onHide(node.sessionId);
+              } else {
+                setPendingHide(true);
+              }
+            }}
+            onBlur={() => setPendingHide(false)}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <path
+                d="M1 6c1.2-2.3 3-3.5 5-3.5s3.8 1.2 5 3.5c-1.2 2.3-3 3.5-5 3.5S2.2 8.3 1 6z"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 10L10 2"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinecap="round"
+              />
+            </svg>
+          </IconButton>
+        </span>
+      </div>
+      {isExpanded &&
+        node.children.map((child) => (
+          <HistoryTreeRow
+            key={child.sessionId}
+            node={child}
+            depth={depth + 1}
+            expandedNodes={expandedNodes}
+            isPinned={isPinned}
+            childCountLabel={childCountLabel}
+            onToggleExpand={onToggleExpand}
+            onOpen={onOpen}
+            onHide={onHide}
+            onPin={onPin}
+            onUnpin={onUnpin}
+            t={t}
+          />
+        ))}
+    </>
   );
+}
+
+function filterProjectTree(
+  tree: SessionHistoryProjectTree,
+  hidden: ReadonlySet<string>,
+): SessionHistoryProjectTree | null {
+  const roots = tree.roots
+    .map((root) => filterHistoryNode(root, hidden))
+    .filter((root): root is SessionHistoryNode => root !== null);
+
+  if (roots.length === 0) {
+    return null;
+  }
+
+  return {
+    ...tree,
+    roots,
+    rootCount: roots.length,
+    latestActivityAt: roots[0]?.treeLastActivityAt ?? "",
+  };
+}
+
+function filterHistoryNode(
+  node: SessionHistoryNode,
+  hidden: ReadonlySet<string>,
+): SessionHistoryNode | null {
+  if (hidden.has(node.sessionId)) {
+    return null;
+  }
+
+  const children = node.children
+    .map((child) => filterHistoryNode(child, hidden))
+    .filter((child): child is SessionHistoryNode => child !== null);
+
+  const treeLastActivityAt = children.reduce(
+    (latest, child) =>
+      new Date(child.treeLastActivityAt).getTime() >
+      new Date(latest).getTime()
+        ? child.treeLastActivityAt
+        : latest,
+    node.lastActivityAt,
+  );
+
+  return {
+    ...node,
+    children,
+    hasChildren: children.length > 0,
+    childCount: children.length,
+    treeLastActivityAt,
+  };
 }
 
 export function SessionsPanel({

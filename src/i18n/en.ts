@@ -609,6 +609,10 @@ export const en = {
   sessions_history_title: "History",
   sessions_history_loading: "Loading past sessions…",
   sessions_history_empty: "No past sessions in this canvas yet.",
+  sessions_history_children_count: (n: number) =>
+    `${n} child${n === 1 ? "" : "ren"}`,
+  sessions_history_pin_tree: "Pin tree to top",
+  sessions_history_hide_tree: "Hide subtree from history",
   sessions_history_more_hint: "older sessions — use Cmd+K to find specific ones",
   sessions_history_load_more: "Load more",
   sessions_overlay_empty_title: "Pick a session on the left",

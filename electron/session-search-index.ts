@@ -36,8 +36,13 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 
+import {
+  buildHistoryProjectTrees,
+  type HistoryTreeInputEntry,
+} from "./session-history-tree.ts";
 import { findCodexJsonlFiles, findKimiSessionFiles } from "./usage-collector.ts";
 import { stripSyntheticUserBlocks } from "./session-scanner.ts";
+import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
 
 export interface SessionSearchEntry {
   sessionId: string;
@@ -57,6 +62,7 @@ export interface SessionSearchEntry {
   /** Rough estimate from file size; exact count would require full scan. */
   estimatedMessageCount: number;
   fileSize: number;
+  confirmedParentSessionId?: string;
 }
 
 interface CacheEntry {
@@ -73,7 +79,7 @@ interface CacheEntry {
  * moved, so users see the fix without having to touch their
  * session files.
  */
-const FIRST_PROMPT_SCHEMA_VERSION = 4;
+const FIRST_PROMPT_SCHEMA_VERSION = 5;
 
 const fileCache = new Map<string, CacheEntry>();
 
@@ -128,12 +134,14 @@ async function readFirstPromptAndMeta(
   codexSessionId: string | null;
   claudeCwd: string | null;
   kimiCwd: string | null;
+  confirmedParentSessionId: string | null;
 }> {
   let firstPrompt = "";
   let codexCwd: string | null = null;
   let codexSessionId: string | null = null;
   let claudeCwd: string | null = null;
   let kimiCwd: string | null = null;
+  let confirmedParentSessionId: string | null = null;
   let linesRead = 0;
 
   const stream = fs.createReadStream(filePath, { encoding: "utf-8" });
@@ -165,6 +173,43 @@ async function readFirstPromptAndMeta(
           }
           if (codexSessionId === null && typeof payload.id === "string") {
             codexSessionId = payload.id;
+          }
+          if (
+            confirmedParentSessionId === null &&
+            typeof payload.forked_from_id === "string" &&
+            payload.forked_from_id
+          ) {
+            confirmedParentSessionId = payload.forked_from_id;
+          }
+          if (
+            confirmedParentSessionId === null &&
+            typeof payload.parent_session_id === "string" &&
+            payload.parent_session_id
+          ) {
+            confirmedParentSessionId = payload.parent_session_id;
+          }
+          if (
+            confirmedParentSessionId === null &&
+            payload.source &&
+            typeof payload.source === "object"
+          ) {
+            const source = payload.source as Record<string, unknown>;
+            const subagent =
+              source.subagent && typeof source.subagent === "object"
+                ? (source.subagent as Record<string, unknown>)
+                : null;
+            const threadSpawn =
+              subagent?.thread_spawn &&
+              typeof subagent.thread_spawn === "object"
+                ? (subagent.thread_spawn as Record<string, unknown>)
+                : null;
+            if (
+              threadSpawn &&
+              typeof threadSpawn.parent_thread_id === "string" &&
+              threadSpawn.parent_thread_id
+            ) {
+              confirmedParentSessionId = threadSpawn.parent_thread_id;
+            }
           }
         }
       }
@@ -253,7 +298,14 @@ async function readFirstPromptAndMeta(
     stream.destroy();
   }
 
-  return { firstPrompt, codexCwd, codexSessionId, claudeCwd, kimiCwd };
+  return {
+    firstPrompt,
+    codexCwd,
+    codexSessionId,
+    claudeCwd,
+    kimiCwd,
+    confirmedParentSessionId,
+  };
 }
 
 function extractKimiUserText(content: unknown): string {
@@ -342,7 +394,14 @@ async function buildEntry(
       return cached.entry;
     }
 
-    const { firstPrompt, codexCwd, codexSessionId, claudeCwd, kimiCwd } =
+    const {
+      firstPrompt,
+      codexCwd,
+      codexSessionId,
+      claudeCwd,
+      kimiCwd,
+      confirmedParentSessionId,
+    } =
       await readFirstPromptAndMeta(filePath, provider);
 
     // Prefer the cwd recorded inside the JSONL for both providers —
@@ -386,6 +445,7 @@ async function buildEntry(
         Math.round(stat.size / AVG_LINE_BYTES_ESTIMATE),
       ),
       fileSize: stat.size,
+      confirmedParentSessionId: confirmedParentSessionId ?? undefined,
     };
 
     fileCache.set(filePath, {
@@ -544,6 +604,28 @@ export async function listSessionsForProjects(
 
   results.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
   return results;
+}
+
+export async function listSessionTreesForProjects(
+  projectDirs: string[],
+): Promise<SessionHistoryProjectTree[]> {
+  if (projectDirs.length === 0) return [];
+
+  const flatEntries = await listSessionsForProjects(projectDirs);
+  const treeInputs: HistoryTreeInputEntry[] = flatEntries.map((entry) => ({
+    sessionId: entry.sessionId,
+    provider: entry.provider,
+    projectDir: entry.projectDir,
+    filePath: entry.filePath,
+    firstPrompt: entry.firstPrompt,
+    startedAt: entry.startedAt,
+    lastActivityAt: entry.lastActivityAt,
+    estimatedMessageCount: entry.estimatedMessageCount,
+    fileSize: entry.fileSize,
+    confirmedParentSessionId: entry.confirmedParentSessionId,
+  }));
+
+  return buildHistoryProjectTrees(treeInputs);
 }
 
 /**

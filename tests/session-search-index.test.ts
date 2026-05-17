@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   clearSessionIndexCache,
+  listSessionTreesForProjects,
   listSessionsForProjects,
   listSessionsForProjectsPaged,
 } from "../electron/session-search-index.ts";
@@ -124,5 +125,159 @@ test("listSessionsForProjectsPaged applies the same normalized matching for code
 
     assert.equal(entries.length, 1);
     assert.equal(entries[0]?.sessionId, "session-codex");
+  });
+});
+
+test("listSessionTreesForProjects nests sessions only when the raw session contains a confirmed parent field", async () => {
+  await withTempHome(async (homeDir) => {
+    const rootFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "18",
+      "root.jsonl",
+    );
+    const childFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "18",
+      "child.jsonl",
+    );
+
+    writeJsonl(rootFile, [
+      {
+        timestamp: "2026-05-18T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "root-session",
+          cwd: "/repo",
+        },
+      },
+      {
+        timestamp: "2026-05-18T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "root prompt",
+        },
+      },
+    ]);
+    writeJsonl(childFile, [
+      {
+        timestamp: "2026-05-18T10:05:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "child-session",
+          cwd: "/repo",
+          forked_from_id: "root-session",
+        },
+      },
+      {
+        timestamp: "2026-05-18T10:05:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "child prompt",
+        },
+      },
+    ]);
+
+    const trees = await listSessionTreesForProjects(["/repo"]);
+
+    assert.equal(trees.length, 1);
+    assert.deepEqual(
+      trees[0]?.roots.map((node) => node.sessionId),
+      ["root-session"],
+    );
+    assert.deepEqual(
+      trees[0]?.roots[0]?.children.map((node) => node.sessionId),
+      ["child-session"],
+    );
+  });
+});
+
+test("listSessionTreesForProjects recognizes Codex subagent parent_thread_id as a confirmed relationship", async () => {
+  await withTempHome(async (homeDir) => {
+    const parentFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "18",
+      "parent.jsonl",
+    );
+    const childFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "18",
+      "child-subagent.jsonl",
+    );
+
+    writeJsonl(parentFile, [
+      {
+        timestamp: "2026-05-18T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "parent-session",
+          cwd: "/repo",
+        },
+      },
+      {
+        timestamp: "2026-05-18T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "parent prompt",
+        },
+      },
+    ]);
+    writeJsonl(childFile, [
+      {
+        timestamp: "2026-05-18T10:05:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "child-session",
+          cwd: "/repo",
+          thread_source: "subagent",
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-session",
+                depth: 1,
+              },
+            },
+          },
+        },
+      },
+      {
+        timestamp: "2026-05-18T10:05:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "child prompt",
+        },
+      },
+    ]);
+
+    const trees = await listSessionTreesForProjects(["/repo"]);
+
+    assert.equal(trees.length, 1);
+    assert.deepEqual(
+      trees[0]?.roots.map((node) => node.sessionId),
+      ["parent-session"],
+    );
+    assert.deepEqual(
+      trees[0]?.roots[0]?.children.map((node) => node.sessionId),
+      ["child-session"],
+    );
   });
 });

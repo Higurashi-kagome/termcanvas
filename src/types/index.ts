@@ -835,6 +835,9 @@ export interface TermCanvasAPI {
       }>;
       total: number;
     }>;
+    listSessionTrees: (
+      projectDirs: string[],
+    ) => Promise<import("../../shared/sessions").SessionHistoryProjectTree[]>;
   };
   state: {
     load: () => Promise<PersistedCanvasState | null>;
