@@ -3,18 +3,28 @@ import assert from "node:assert/strict";
 
 function installRuntimeGlobals() {
   const storage = new Map<string, string>();
+  let clipboardText = "";
   const navigator = {
     language: "en-US",
     userAgent: "node-test",
     clipboard: {
-      writeText: async () => {},
+      readText: async () => clipboardText,
+      writeText: async (value: string) => {
+        clipboardText = value;
+      },
     },
   };
   const target = new EventTarget();
   const mockWindow = Object.assign(target, {
     navigator,
     termcanvas: undefined as unknown,
-  }) as Window & { termcanvas: unknown };
+    __setClipboardText(value: string) {
+      clipboardText = value;
+    },
+  }) as Window & {
+    __setClipboardText: (value: string) => void;
+    termcanvas: unknown;
+  };
 
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -46,6 +56,805 @@ function installRuntimeGlobals() {
 
   return mockWindow;
 }
+
+test("terminal host shortcut helpers classify Windows, macOS, and Linux paste/copy chords", async () => {
+  installRuntimeGlobals();
+  const terminalRuntimeModule = await import(
+    "../src/terminal/terminalRuntimeStore.ts"
+  ) as unknown as Record<string, unknown>;
+
+  assert.equal(typeof terminalRuntimeModule.isTerminalPasteShortcut, "function");
+  assert.equal(typeof terminalRuntimeModule.isTerminalCopyShortcut, "function");
+
+  const isTerminalPasteShortcut =
+    terminalRuntimeModule.isTerminalPasteShortcut as (
+      event: Pick<
+        KeyboardEvent,
+        "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+      >,
+      platform: "darwin" | "linux" | "win32",
+    ) => boolean;
+  const isTerminalCopyShortcut =
+    terminalRuntimeModule.isTerminalCopyShortcut as (
+      event: Pick<
+        KeyboardEvent,
+        "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+      >,
+      platform: "darwin" | "linux" | "win32",
+    ) => boolean;
+
+  assert.equal(
+    isTerminalPasteShortcut(
+      {
+        altKey: false,
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+      },
+      "win32",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalPasteShortcut(
+      {
+        altKey: false,
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: true,
+      },
+      "linux",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalPasteShortcut(
+      {
+        altKey: false,
+        ctrlKey: false,
+        key: "v",
+        metaKey: true,
+        shiftKey: false,
+      },
+      "darwin",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalPasteShortcut(
+      {
+        altKey: true,
+        ctrlKey: false,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+      },
+      "win32",
+    ),
+    false,
+  );
+
+  assert.equal(
+    isTerminalCopyShortcut(
+      {
+        altKey: false,
+        ctrlKey: true,
+        key: "c",
+        metaKey: false,
+        shiftKey: false,
+      },
+      "win32",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalCopyShortcut(
+      {
+        altKey: false,
+        ctrlKey: true,
+        key: "c",
+        metaKey: false,
+        shiftKey: true,
+      },
+      "linux",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalCopyShortcut(
+      {
+        altKey: false,
+        ctrlKey: false,
+        key: "c",
+        metaKey: true,
+        shiftKey: false,
+      },
+      "darwin",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalCopyShortcut(
+      {
+        altKey: false,
+        ctrlKey: true,
+        key: "c",
+        metaKey: false,
+        shiftKey: false,
+      },
+      "darwin",
+    ),
+    false,
+  );
+});
+
+test("terminal clipboard helpers paste text and copy selections through clipboard APIs", async () => {
+  const mockWindow = installRuntimeGlobals();
+  mockWindow.__setClipboardText("hello from clipboard");
+  const terminalRuntimeModule = await import(
+    "../src/terminal/terminalRuntimeStore.ts"
+  ) as unknown as Record<string, unknown>;
+
+  assert.equal(typeof terminalRuntimeModule.pasteTextFromClipboard, "function");
+  assert.equal(typeof terminalRuntimeModule.copyTerminalSelection, "function");
+
+  const pasteTextFromClipboard =
+    terminalRuntimeModule.pasteTextFromClipboard as (
+      xterm: { paste(text: string): void },
+    ) => Promise<boolean>;
+  const copyTerminalSelection =
+    terminalRuntimeModule.copyTerminalSelection as (
+      runtime: {
+        attachOptions: { onCopy?: () => void } | null;
+        meta: { terminal: { id: string } };
+      },
+      xterm: { getSelection(): string },
+    ) => Promise<boolean>;
+  const { useTerminalRuntimeStore } = terminalRuntimeModule as {
+    useTerminalRuntimeStore: {
+      getState(): {
+        terminals: Record<string, { copiedNonce: number } | undefined>;
+      };
+      setState(
+        updater:
+          | Record<string, unknown>
+          | ((state: Record<string, unknown>) => Record<string, unknown>),
+      ): void;
+    };
+  };
+
+  const pastePayloads: string[] = [];
+  const pasted = await pasteTextFromClipboard({
+    paste(text: string) {
+      pastePayloads.push(text);
+    },
+  });
+
+  assert.equal(pasted, true);
+  assert.deepEqual(pastePayloads, ["hello from clipboard"]);
+
+  useTerminalRuntimeStore.setState({
+    terminals: {
+      "terminal-1": {
+        copiedNonce: 0,
+        mode: "live",
+        previewText: "",
+        telemetry: null,
+      },
+    },
+  });
+
+  let copyHookCalls = 0;
+  const copied = await copyTerminalSelection(
+    {
+      attachOptions: {
+        onCopy() {
+          copyHookCalls += 1;
+        },
+      },
+      meta: {
+        terminal: {
+          id: "terminal-1",
+        },
+      },
+    },
+    {
+      getSelection() {
+        return "selected text";
+      },
+    },
+  );
+
+  assert.equal(copied, true);
+  assert.equal(await navigator.clipboard.readText(), "selected text");
+  assert.equal(copyHookCalls, 1);
+  assert.equal(
+    useTerminalRuntimeStore.getState().terminals["terminal-1"]?.copiedNonce,
+    1,
+  );
+});
+
+test("Windows host key handler pastes clipboard text for Ctrl+V and keeps it out of the PTY input path", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    __setClipboardText: (value: string) => void;
+    termcanvas: unknown;
+  };
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    ensureTerminalRuntime,
+    getTerminalRuntime,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+  const terminalInputs: string[] = [];
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    mockWindow.__setClipboardText("hello from clipboard");
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input(_ptyId: number, data: string) {
+          terminalInputs.push(data);
+        },
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    runtime.ptyId = 42;
+    const { fitAddon, pastePayloads, triggerKeyEvent, xterm } = createMockXterm();
+    runtime.fitAddon = fitAddon as unknown as typeof runtime.fitAddon;
+    runtime.hostElement = createFakeContainer() as unknown as HTMLDivElement;
+    runtime.attachedContainer = createFakeContainer() as unknown as HTMLDivElement;
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+
+    const terminalRuntimeModule = await import(
+      "../src/terminal/terminalRuntimeStore.ts"
+    ) as unknown as Record<string, unknown>;
+    const registerTerminalKeyHandler =
+      terminalRuntimeModule.registerTerminalKeyHandler as
+        | ((
+            runtimeArg: unknown,
+            xtermArg: unknown,
+          ) => void)
+        | undefined;
+
+    assert.equal(typeof registerTerminalKeyHandler, "function");
+    registerTerminalKeyHandler?.(runtime, runtime.xterm);
+
+    assert.equal(runtime.inputDisposable !== null, true);
+    const shouldPassThrough = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(shouldPassThrough, false);
+    assert.deepEqual(pastePayloads, ["hello from clipboard"]);
+    assert.deepEqual(terminalInputs, []);
+  } finally {
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("Windows host key handler suppresses the follow-up native paste event after Ctrl+V", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    __setClipboardText: (value: string) => void;
+    termcanvas: unknown;
+  };
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    ensureTerminalRuntime,
+    getTerminalRuntime,
+    registerTerminalKeyHandler,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    mockWindow.__setClipboardText("hello from clipboard");
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    const { pastePayloads, triggerKeyEvent, triggerPasteEvent, xterm } =
+      createMockXterm();
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+    runtime.ptyId = 42;
+
+    registerTerminalKeyHandler(runtime, runtime.xterm);
+
+    const shouldPassThrough = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+    const nativePasteEvent = triggerPasteEvent("textarea", "hello from clipboard");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(shouldPassThrough, false);
+    assert.equal(nativePasteEvent.defaultPrevented, true);
+    assert.deepEqual(pastePayloads, ["hello from clipboard"]);
+  } finally {
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("Windows host key handler copies selection for Ctrl+C but passes through when there is no selection", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    termcanvas: unknown;
+  };
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    getTerminalRuntime,
+    ensureTerminalRuntime,
+    registerTerminalKeyHandler,
+    useTerminalRuntimeStore,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    const { setSelectionText, triggerKeyEvent, xterm } = createMockXterm();
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+    runtime.ptyId = 42;
+
+    useTerminalRuntimeStore.setState({
+      terminals: {
+        "terminal-1": {
+          copiedNonce: 0,
+          mode: "live",
+          previewText: "",
+          telemetry: null,
+        },
+      },
+    });
+
+    let onCopyCalls = 0;
+    runtime.attachOptions = {
+      onCopy() {
+        onCopyCalls += 1;
+      },
+    };
+
+    registerTerminalKeyHandler(runtime, runtime.xterm);
+
+    setSelectionText("selected text");
+    const copied = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "c",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(copied, false);
+    assert.equal(await navigator.clipboard.readText(), "selected text");
+    assert.equal(onCopyCalls, 1);
+    assert.equal(
+      useTerminalRuntimeStore.getState().terminals["terminal-1"]?.copiedNonce,
+      1,
+    );
+
+    setSelectionText("");
+    const passedThrough = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "c",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    assert.equal(passedThrough, true);
+  } finally {
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("Windows host key handler supports Shift+Insert paste and Ctrl+Insert copy", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    __setClipboardText: (value: string) => void;
+    termcanvas: unknown;
+  };
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    getTerminalRuntime,
+    ensureTerminalRuntime,
+    registerTerminalKeyHandler,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    mockWindow.__setClipboardText("insert paste");
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    const { pastePayloads, setSelectionText, triggerKeyEvent, xterm } = createMockXterm();
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+    runtime.ptyId = 42;
+
+    registerTerminalKeyHandler(runtime, runtime.xterm);
+
+    const pasted = triggerKeyEvent(
+      {
+        ctrlKey: false,
+        key: "Insert",
+        metaKey: false,
+        shiftKey: true,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(pasted, false);
+    assert.deepEqual(pastePayloads, ["insert paste"]);
+
+    setSelectionText("copy via insert");
+    const copied = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "Insert",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(copied, false);
+    assert.equal(await navigator.clipboard.readText(), "copy via insert");
+  } finally {
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("macOS and Linux host key handlers follow their platform paste conventions", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    __setClipboardText: (value: string) => void;
+    termcanvas: unknown;
+  };
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    getTerminalRuntime,
+    ensureTerminalRuntime,
+    registerTerminalKeyHandler,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    mockWindow.__setClipboardText("platform paste");
+    mockWindow.termcanvas = {
+      app: { platform: "darwin" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    const { pastePayloads, triggerKeyEvent, xterm } = createMockXterm();
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+    runtime.ptyId = 42;
+
+    registerTerminalKeyHandler(runtime, runtime.xterm);
+
+    const macPaste = triggerKeyEvent(
+      {
+        ctrlKey: false,
+        key: "v",
+        metaKey: true,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(macPaste, false);
+    assert.deepEqual(pastePayloads, ["platform paste"]);
+
+    mockWindow.termcanvas = {
+      ...(mockWindow.termcanvas as Record<string, unknown>),
+      app: { platform: "linux" },
+    };
+
+    const linuxPaste = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: true,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+    const linuxPlainCtrlV = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(linuxPaste, false);
+    assert.equal(linuxPlainCtrlV, true);
+    assert.deepEqual(pastePayloads, ["platform paste", "platform paste"]);
+  } finally {
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("paste shortcut stays intercepted when clipboard read fails", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    termcanvas: unknown;
+  };
+  const originalReadText = navigator.clipboard.readText;
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    destroyAllTerminalRuntimes,
+    getTerminalRuntime,
+    ensureTerminalRuntime,
+    registerTerminalKeyHandler,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+  let terminalInputCalls = 0;
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    navigator.clipboard.readText = async () => {
+      throw new Error("clipboard unavailable");
+    };
+
+    seedProjectState(useProjectStore);
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {
+          terminalInputCalls += 1;
+        },
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    const { pastePayloads, triggerKeyEvent, xterm } = createMockXterm();
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+    runtime.ptyId = 42;
+
+    registerTerminalKeyHandler(runtime, runtime.xterm);
+
+    const shouldPassThrough = triggerKeyEvent(
+      {
+        ctrlKey: true,
+        key: "v",
+        metaKey: false,
+        shiftKey: false,
+        type: "keydown",
+      } as KeyboardEvent,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(shouldPassThrough, false);
+    assert.deepEqual(pastePayloads, []);
+    assert.equal(terminalInputCalls, 0);
+  } finally {
+    navigator.clipboard.readText = originalReadText;
+    destroyAllTerminalRuntimes();
+    useProjectStore.setState(previousProjectState);
+  }
+});
 
 function createTerminal() {
   return {
@@ -115,8 +924,18 @@ function createFakeContainer() {
 }
 
 function createMockXterm() {
+  let customKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
+  let selectionText = "";
+  const pastePayloads: string[] = [];
+  const element = createFakeEventNode((text: string) => {
+    pastePayloads.push(text);
+  });
+  const textarea = createFakeEventNode((text: string) => {
+    pastePayloads.push(text);
+  });
   const stats = {
     blurCalls: 0,
+    customKeyHandlerRegistrations: 0,
     disposeCalls: 0,
     fitCalls: 0,
     focusCalls: 0,
@@ -132,8 +951,13 @@ function createMockXterm() {
 
   const xterm = {
     cols: 80,
+    element,
     rows: 24,
     options: {},
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      customKeyHandler = handler;
+      stats.customKeyHandlerRegistrations += 1;
+    },
     blur() {
       stats.blurCalls += 1;
     },
@@ -144,7 +968,7 @@ function createMockXterm() {
       stats.focusCalls += 1;
     },
     getSelection() {
-      return "";
+      return selectionText;
     },
     loadAddon() {
       stats.loadAddonCalls += 1;
@@ -171,6 +995,9 @@ function createMockXterm() {
         },
       };
     },
+    paste(text: string) {
+      pastePayloads.push(text);
+    },
     refresh() {
       stats.refreshCalls += 1;
     },
@@ -178,6 +1005,7 @@ function createMockXterm() {
       stats.selectAllCalls += 1;
     },
     scrollToBottom() {},
+    textarea,
     write() {},
   };
 
@@ -187,7 +1015,88 @@ function createMockXterm() {
     },
   };
 
-  return { fitAddon, stats, xterm };
+  return {
+    fitAddon,
+    pastePayloads,
+    setSelectionText(value: string) {
+      selectionText = value;
+    },
+    stats,
+    triggerKeyEvent(event: KeyboardEvent) {
+      if (!customKeyHandler) {
+        throw new Error("custom key handler was not registered");
+      }
+      return customKeyHandler(event);
+    },
+    triggerPasteEvent(target: "element" | "textarea", text: string) {
+      return xterm[target].dispatchPaste(text);
+    },
+    xterm,
+  };
+}
+
+function createFakeEventNode(onNativePaste: (text: string) => void) {
+  const pasteListeners: Array<(event: Event) => void> = [];
+
+  return {
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      if (type !== "paste") {
+        return;
+      }
+
+      pasteListeners.push(toEventListener(listener));
+    },
+    removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+    ) {
+      if (type !== "paste") {
+        return;
+      }
+
+      const normalized = toEventListener(listener);
+      const index = pasteListeners.findIndex((entry) => entry === normalized);
+      if (index >= 0) {
+        pasteListeners.splice(index, 1);
+      }
+    },
+    dispatchPaste(text: string) {
+      let defaultPrevented = false;
+      let immediateStopped = false;
+      const event = {
+        defaultPrevented: false,
+        preventDefault() {
+          defaultPrevented = true;
+          this.defaultPrevented = true;
+        },
+        stopImmediatePropagation() {
+          immediateStopped = true;
+        },
+        type: "paste",
+      } as Event & { defaultPrevented: boolean };
+
+      for (const listener of [...pasteListeners]) {
+        listener(event);
+        if (immediateStopped) {
+          break;
+        }
+      }
+
+      if (!defaultPrevented) {
+        onNativePaste(text);
+      }
+
+      return event;
+    },
+  };
+}
+
+function toEventListener(listener: EventListenerOrEventListenerObject) {
+  if (typeof listener === "function") {
+    return listener;
+  }
+
+  return (event: Event) => listener.handleEvent(event);
 }
 
 test("destroyTerminalRuntime clears live pty ids from runtime overlay state", async () => {
