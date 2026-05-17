@@ -188,6 +188,29 @@ async function readFirstPromptAndMeta(
           ) {
             confirmedParentSessionId = payload.parent_session_id;
           }
+          if (
+            confirmedParentSessionId === null &&
+            payload.source &&
+            typeof payload.source === "object"
+          ) {
+            const source = payload.source as Record<string, unknown>;
+            const subagent =
+              source.subagent && typeof source.subagent === "object"
+                ? (source.subagent as Record<string, unknown>)
+                : null;
+            const threadSpawn =
+              subagent?.thread_spawn &&
+              typeof subagent.thread_spawn === "object"
+                ? (subagent.thread_spawn as Record<string, unknown>)
+                : null;
+            if (
+              threadSpawn &&
+              typeof threadSpawn.parent_thread_id === "string" &&
+              threadSpawn.parent_thread_id
+            ) {
+              confirmedParentSessionId = threadSpawn.parent_thread_id;
+            }
+          }
         }
       }
 
