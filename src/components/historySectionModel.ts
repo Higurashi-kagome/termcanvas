@@ -1,3 +1,5 @@
+import type { SessionHistoryNode } from "../../shared/sessions";
+
 export function shouldRefreshHistorySection(
   projectDirs: string[],
   changedProjectDirs: string[],
@@ -82,4 +84,65 @@ export function filterHiddenEntries<T extends GroupableHistoryEntry>(
 ): T[] {
   if (hidden.size === 0) return entries;
   return entries.filter((entry) => !hidden.has(entry.sessionId));
+}
+
+export function resolvePinnedHistoryRoot(
+  roots: SessionHistoryNode[],
+  sessionId: string,
+): string | null {
+  for (const root of roots) {
+    if (containsHistoryNode(root, sessionId)) {
+      return root.sessionId;
+    }
+  }
+  return null;
+}
+
+export function hideHistorySubtree(
+  hidden: ReadonlySet<string>,
+  roots: SessionHistoryNode[],
+  targetSessionId: string,
+): Set<string> {
+  const next = new Set(hidden);
+  const target = findHistoryNode(roots, targetSessionId);
+  if (!target) return next;
+  walkHistoryNode(target, (node) => next.add(node.sessionId));
+  return next;
+}
+
+export function collectVisibleHistoryRoots(
+  roots: SessionHistoryNode[],
+  limit: number,
+): SessionHistoryNode[] {
+  return roots.slice(0, Math.max(0, limit));
+}
+
+function containsHistoryNode(
+  node: SessionHistoryNode,
+  sessionId: string,
+): boolean {
+  if (node.sessionId === sessionId) return true;
+  return node.children.some((child) => containsHistoryNode(child, sessionId));
+}
+
+function findHistoryNode(
+  roots: SessionHistoryNode[],
+  sessionId: string,
+): SessionHistoryNode | null {
+  for (const root of roots) {
+    if (root.sessionId === sessionId) return root;
+    const nested = findHistoryNode(root.children, sessionId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function walkHistoryNode(
+  node: SessionHistoryNode,
+  visitor: (node: SessionHistoryNode) => void,
+): void {
+  visitor(node);
+  for (const child of node.children) {
+    walkHistoryNode(child, visitor);
+  }
 }

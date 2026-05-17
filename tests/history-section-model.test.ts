@@ -2,10 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  collectVisibleHistoryRoots,
   filterHiddenEntries,
   groupHistoryByProject,
+  hideHistorySubtree,
+  resolvePinnedHistoryRoot,
   shouldRefreshHistorySection,
 } from "../src/components/historySectionModel.ts";
+import type { SessionHistoryNode } from "../shared/sessions.ts";
 
 test("shouldRefreshHistorySection only refreshes overlapping project scopes", () => {
   assert.equal(
@@ -83,4 +87,55 @@ test("filterHiddenEntries returns input unchanged when hidden is empty", () => {
   ];
   const result = filterHiddenEntries(entries, new Set());
   assert.equal(result, entries);
+});
+
+function node(
+  sessionId: string,
+  children: SessionHistoryNode[] = [],
+): SessionHistoryNode {
+  return {
+    sessionId,
+    provider: "codex",
+    projectDir: "/repo",
+    filePath: `/repo/${sessionId}.jsonl`,
+    firstPrompt: sessionId,
+    startedAt: "2026-05-18T10:00:00.000Z",
+    lastActivityAt: "2026-05-18T10:00:00.000Z",
+    treeLastActivityAt: "2026-05-18T10:00:00.000Z",
+    rootSessionId: sessionId,
+    depth: 0,
+    relationshipSource: "none",
+    hasChildren: children.length > 0,
+    childCount: children.length,
+    children,
+  };
+}
+
+test("resolvePinnedHistoryRoot maps any descendant back to the root session", () => {
+  const roots = [
+    node("root", [node("child", [node("grandchild")])]),
+  ];
+
+  assert.equal(resolvePinnedHistoryRoot(roots, "grandchild"), "root");
+});
+
+test("hideHistorySubtree hides a child and all descendants without hiding siblings", () => {
+  const roots = [
+    node("root", [node("child", [node("grandchild")]), node("sibling")]),
+  ];
+
+  const hidden = hideHistorySubtree(new Set<string>(), roots, "child");
+
+  assert.deepEqual([...hidden].sort(), ["child", "grandchild"]);
+});
+
+test("collectVisibleHistoryRoots applies the root limit only to roots", () => {
+  const roots = [node("root-a"), node("root-b")];
+
+  const visible = collectVisibleHistoryRoots(roots, 1);
+
+  assert.deepEqual(
+    visible.map((entry) => entry.sessionId),
+    ["root-a"],
+  );
 });
