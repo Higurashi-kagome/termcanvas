@@ -78,6 +78,7 @@ import {
   onAuthStateChange,
   isLoggedIn,
 } from "./auth";
+import { installBrokenPipeGuards } from "./process-stream-guards";
 import { toFileUrl } from "./file-url";
 import {
   queryCloudUsage,
@@ -178,6 +179,8 @@ import type { RenderDiagnosticEventInput } from "../shared/render-diagnostics";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+installBrokenPipeGuards([process.stdout, process.stderr]);
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 if (isDev) {

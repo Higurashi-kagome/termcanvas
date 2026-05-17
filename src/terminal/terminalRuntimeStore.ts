@@ -1782,6 +1782,10 @@ function startTerminalRuntime(runtime: ManagedTerminalRuntime) {
         return;
       }
 
+      // Clear the live PTY handle before any fallback logic runs so late
+      // resize/input events do not keep targeting an already-exited process.
+      setPtyId(runtime, null);
+
       if (runtime.waitingTimer) {
         clearTimeout(runtime.waitingTimer);
         runtime.waitingTimer = null;
