@@ -96,6 +96,7 @@ import { getProjectDiff } from "./git-diff";
 import { searchFileContents, searchSessionContents } from "./search-handlers";
 import {
   invalidateSessionIndexForFile,
+  listSessionTreesForProjects,
   listSessionsForProjects,
   listSessionsForProjectsPaged,
   type SessionSearchEntry,
@@ -105,6 +106,7 @@ import {
   diffSessionHistoryScopes,
 } from "./session-history-events.ts";
 import type { SessionHistoryChangedEvent } from "../shared/sessions.ts";
+import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
 import {
   checkoutGitRef,
   createCommit,
@@ -1262,6 +1264,21 @@ function setupIpc() {
       } catch (err) {
         console.error("[search:sessions:list-page] failed", err);
         return { entries: [], total: 0 };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "search:sessions:list-trees",
+    async (
+      _event,
+      projectDirs: string[],
+    ): Promise<SessionHistoryProjectTree[]> => {
+      try {
+        return await listSessionTreesForProjects(projectDirs ?? []);
+      } catch (err) {
+        console.error("[search:sessions:list-trees] failed", err);
+        return [];
       }
     },
   );
