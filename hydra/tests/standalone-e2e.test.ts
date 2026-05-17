@@ -15,6 +15,24 @@ function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function retrySync(fn: () => void, attempts = 40, delayMs = 100): void {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      fn();
+      return;
+    } catch (error) {
+      lastError = error;
+      sleepSync(delayMs);
+    }
+  }
+  throw lastError;
+}
+
 function initRepo(): string {
   const repo = makeTempDir("hydra-standalone-e2e-");
   execFileSync("git", ["init", "--initial-branch", "main"], {
@@ -44,6 +62,53 @@ function initRepo(): string {
     stdio: "pipe",
   });
   return repo;
+}
+
+function cleanupTempRepo(repo: string): void {
+  const worktreesRoot = path.join(repo, ".worktrees");
+  if (fs.existsSync(worktreesRoot)) {
+    for (const entry of fs.readdirSync(worktreesRoot)) {
+      const worktreePath = path.join(worktreesRoot, entry);
+      retrySync(() => {
+        try {
+          execFileSync("git", ["worktree", "remove", worktreePath, "--force"], {
+            cwd: repo,
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+        } catch {
+          fs.rmSync(worktreePath, { recursive: true, force: true });
+        }
+      });
+    }
+  }
+
+  const hydraBranches = execFileSync("git", ["branch", "--list", "hydra/*"], {
+    cwd: repo,
+    encoding: "utf-8",
+    stdio: "pipe",
+  })
+    .split("\n")
+    .map((line) => line.replace(/^\*/, "").trim())
+    .filter(Boolean);
+  for (const branch of hydraBranches) {
+    retrySync(() => {
+      execFileSync("git", ["branch", "-D", branch], {
+        cwd: repo,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+    });
+  }
+}
+
+function removeDirWithRetry(target: string): void {
+  if (!fs.existsSync(target)) {
+    return;
+  }
+  retrySync(() => {
+    fs.rmSync(target, { recursive: true, force: true });
+  });
 }
 
 function createManagedWorktree(repo: string, label: string): {
@@ -223,10 +288,39 @@ console.error("fake claude could not determine whether this is a task run or fol
 process.exit(1);
 `;
 
+  const codexScriptPath = path.join(binDir, "codex.js");
+  const claudeScriptPath = path.join(binDir, "claude.js");
+  fs.writeFileSync(codexScriptPath, fakeCodex, { encoding: "utf-8", mode: 0o755 });
+  fs.writeFileSync(claudeScriptPath, fakeClaude, { encoding: "utf-8", mode: 0o755 });
+
+  if (process.platform === "win32") {
+    const codexCmdPath = path.join(binDir, "codex.cmd");
+    const claudeCmdPath = path.join(binDir, "claude.cmd");
+    fs.writeFileSync(
+      codexCmdPath,
+      `@echo off\r\nnode "%~dp0codex.js" %*\r\n`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      claudeCmdPath,
+      `@echo off\r\nnode "%~dp0claude.js" %*\r\n`,
+      "utf-8",
+    );
+    return;
+  }
+
   const codexPath = path.join(binDir, "codex");
   const claudePath = path.join(binDir, "claude");
-  fs.writeFileSync(codexPath, fakeCodex, { encoding: "utf-8", mode: 0o755 });
-  fs.writeFileSync(claudePath, fakeClaude, { encoding: "utf-8", mode: 0o755 });
+  fs.writeFileSync(
+    codexPath,
+    `#!/usr/bin/env sh\nexec node "$(dirname "$0")/codex.js" "$@"\n`,
+    { encoding: "utf-8", mode: 0o755 },
+  );
+  fs.writeFileSync(
+    claudePath,
+    `#!/usr/bin/env sh\nexec node "$(dirname "$0")/claude.js" "$@"\n`,
+    { encoding: "utf-8", mode: 0o755 },
+  );
 }
 
 function makeStandaloneEnv(homeDir: string, binDir: string): NodeJS.ProcessEnv {
@@ -236,7 +330,7 @@ function makeStandaloneEnv(homeDir: string, binDir: string): NodeJS.ProcessEnv {
     HYDRA_HOME: path.join(homeDir, ".hydra-home"),
     HYDRA_STANDALONE: "1",
     HYDRA_LEAD_ID: "standalone-lead-test",
-    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
     TERMCANVAS_URL: "",
     TERMCANVAS_HOST: "",
     TERMCANVAS_PORT: "",
@@ -433,9 +527,18 @@ test("standalone workflow lifecycle runs without TermCanvas and asks in the disp
     const listed = runHydra(["list", "--workbenches", "--repo", repo], env);
     assert.match(listed, new RegExp(init.workbench_id));
     assert.match(listed, /\bcompleted\b/);
+
+    assert.equal(
+      runHydra(
+        ["cleanup", "--workbench", init.workbench_id, "--repo", repo, "--force"],
+        env,
+      ),
+      `Cleaned up resources for workbench ${init.workbench_id}. State files preserved.`,
+    );
   } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-    fs.rmSync(homeDir, { recursive: true, force: true });
+    cleanupTempRepo(repo);
+    removeDirWithRetry(repo);
+    removeDirWithRetry(homeDir);
   }
 });
 
@@ -543,8 +646,9 @@ test("standalone merge flow succeeds and cleanup removes Hydra-managed dispatch 
       "",
     );
   } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-    fs.rmSync(homeDir, { recursive: true, force: true });
+    cleanupTempRepo(repo);
+    removeDirWithRetry(repo);
+    removeDirWithRetry(homeDir);
   }
 });
 
@@ -586,8 +690,9 @@ test("standalone spawn flow works without TermCanvas and can be listed and clean
 
     assert.equal(runHydra(["list", "--repo", repo], env), "No agents.");
   } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-    fs.rmSync(homeDir, { recursive: true, force: true });
+    cleanupTempRepo(repo);
+    removeDirWithRetry(repo);
+    removeDirWithRetry(homeDir);
   }
 });
 
@@ -618,7 +723,8 @@ test("standalone workbench can be marked failed without TermCanvas", () => {
     assert.equal(status.workbench.status, "failed");
     assert.equal(status.workbench.failure?.message, "Intentional failure");
   } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-    fs.rmSync(homeDir, { recursive: true, force: true });
+    cleanupTempRepo(repo);
+    removeDirWithRetry(repo);
+    removeDirWithRetry(homeDir);
   }
 });

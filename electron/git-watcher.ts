@@ -124,13 +124,14 @@ export class GitFileWatcher {
     }
 
     state.isGitRepo = nextIsRepo;
-    callback(nextIsRepo);
 
     if (nextIsRepo) {
       this.startGitDirectoryWatch(worktreePath, gitDir);
+      callback(nextIsRepo);
       return;
     }
 
+    callback(nextIsRepo);
     state.gitDirWatcher?.close();
     state.gitDirWatcher = null;
     state.gitDir = null;
@@ -155,6 +156,13 @@ export class GitFileWatcher {
 
     try {
       state.gitDirWatcher = fs.watch(gitDir, (event, changedFile) => {
+        if (!fs.existsSync(gitDir)) {
+          this.refreshPresenceState(worktreePath, (isGitRepo) => {
+            state.callbacks.onPresenceChanged?.(isGitRepo);
+          });
+          return;
+        }
+
         const name = typeof changedFile === "string" ? changedFile : null;
         if (!isRelevantGitSignal(name)) {
           return;
@@ -177,6 +185,9 @@ export class GitFileWatcher {
         );
         state.gitDirWatcher?.close();
         state.gitDirWatcher = null;
+        this.refreshPresenceState(worktreePath, (isGitRepo) => {
+          state.callbacks.onPresenceChanged?.(isGitRepo);
+        });
       });
     } catch {
       state.gitDirWatcher = null;

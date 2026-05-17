@@ -10,6 +10,7 @@ import type {
   RuntimeTerminalStatus,
   TerminalCreateOptions,
 } from "./types.ts";
+import { resolveCliCommand } from "../cli-resolver.ts";
 
 /**
  * Standalone runtime — spawns claude/codex subprocesses directly and
@@ -328,7 +329,8 @@ export class StandaloneRuntime implements HydraRuntime {
       // Logging is best-effort — the worker must still launch.
     }
 
-    const child = spawn(shell, args, {
+    const resolved = resolveCliCommand(shell, process.env);
+    const child = spawn(resolved.command, [...resolved.argsPrefix, ...args], {
       cwd: options.worktreePath,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],

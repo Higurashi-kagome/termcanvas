@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { resolveCliCommand } from "./cli-resolver.ts";
 import type { TaskDefinition, SWEBenchPrediction } from "./types.ts";
 
 const EVAL_ROOT = join(fileURLToPath(import.meta.url), "../..");
@@ -15,9 +16,10 @@ function exec(
   options: { cwd?: string; timeout?: number },
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
+    const resolved = resolveCliCommand(cmd);
     execFile(
-      cmd,
-      args,
+      resolved.command,
+      [...resolved.argsPrefix, ...args],
       {
         cwd: options.cwd,
         timeout: (options.timeout ?? 600) * 1000,

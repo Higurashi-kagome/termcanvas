@@ -61,10 +61,13 @@ async function makeExecutable(
   name: string,
   contents: string,
 ): Promise<string> {
-  const path = join(dir, name);
-  await writeFile(path, contents);
-  await chmod(path, 0o755);
-  return path;
+  const filePath = join(
+    dir,
+    process.platform === "win32" ? `${name}.cmd` : name,
+  );
+  await writeFile(filePath, contents);
+  await chmod(filePath, 0o755);
+  return filePath;
 }
 
 async function initGitRepo(dir: string): Promise<string> {
@@ -113,7 +116,7 @@ async function runProcess(
 
 async function withPath<T>(binDir: string, fn: () => Promise<T>): Promise<T> {
   const originalPath = process.env.PATH ?? "";
-  process.env.PATH = `${binDir}:${originalPath}`;
+  process.env.PATH = `${binDir}${process.platform === "win32" ? ";" : ":"}${originalPath}`;
   try {
     return await fn();
   } finally {
@@ -139,7 +142,23 @@ describe("eval regressions", () => {
     await makeExecutable(
       binDir,
       "python3",
-      `#!/bin/sh
+      process.platform === "win32"
+        ? `@echo off
+set run_id=
+:loop
+if "%~1"=="" goto done
+if "%~1"=="--run_id" (
+  set run_id=%~2
+  shift
+  shift
+  goto loop
+)
+shift
+goto loop
+:done
+> "fake-model.%run_id%.json" echo {"task-parse":{"resolved":true}}
+`
+        : `#!/bin/sh
 run_id=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--run_id" ]; then
@@ -182,7 +201,26 @@ printf '{"task-parse":{"resolved":true}}' > "fake-model.\${run_id}.json"
     await makeExecutable(
       binDir,
       "python3",
-      `#!/bin/sh
+      process.platform === "win32"
+        ? `@echo off
+> "%CAPTURE_ARGS_FILE%" (
+  for %%A in (%*) do echo %%~A
+)
+set run_id=
+:loop
+if "%~1"=="" goto done
+if "%~1"=="--run_id" (
+  set run_id=%~2
+  shift
+  shift
+  goto loop
+)
+shift
+goto loop
+:done
+> "fake.%run_id%.json" echo {}
+`
+        : `#!/bin/sh
 printf '%s\n' "$@" > "$CAPTURE_ARGS_FILE"
 run_id=""
 while [ "$#" -gt 0 ]; do
@@ -218,7 +256,10 @@ printf '{}' > "fake.\${run_id}.json"
           }
         }
 
-        const args = (await readFile(captureFile, "utf-8")).trim().split("\n");
+        const args = (await readFile(captureFile, "utf-8"))
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
         const datasetIndex = args.indexOf("--dataset_name");
         return args[datasetIndex + 1];
       });
@@ -276,7 +317,12 @@ printf '{}' > "fake.\${run_id}.json"
       await makeExecutable(
         binDir,
         "codex",
-        `#!/bin/sh
+        process.platform === "win32"
+          ? `@echo off
+echo {"event":"start"}
+echo {"cost_usd":1.75}
+`
+          : `#!/bin/sh
 printf '{"event":"start"}\n'
 printf '{"cost_usd":1.75}\n'
 `,
@@ -309,7 +355,14 @@ printf '{"cost_usd":1.75}\n'
       await makeExecutable(
         binDir,
         "codex",
-        `#!/bin/sh
+        process.platform === "win32"
+          ? `@echo off
+> "%CODEX_LOG%" (
+  for %%A in (%*) do echo %%~A
+)
+echo ["subtask"]
+`
+          : `#!/bin/sh
 printf '%s\n' "$@" > "$CODEX_LOG"
 printf '["subtask"]\n'
 `,
@@ -317,7 +370,14 @@ printf '["subtask"]\n'
       await makeExecutable(
         binDir,
         "claude",
-        `#!/bin/sh
+        process.platform === "win32"
+          ? `@echo off
+> "%CLAUDE_LOG%" (
+  for %%A in (%*) do echo %%~A
+)
+echo ["subtask"]
+`
+          : `#!/bin/sh
 printf '%s\n' "$@" > "$CLAUDE_LOG"
 printf '["subtask"]\n'
 `,
@@ -378,7 +438,11 @@ printf '["subtask"]\n'
 
     try {
       await mkdir(binDir, { recursive: true });
-      await makeExecutable(binDir, "codex", "#!/bin/sh\n");
+      await makeExecutable(
+        binDir,
+        "codex",
+        process.platform === "win32" ? "@echo off\n" : "#!/bin/sh\n",
+      );
       const baseA = await initGitRepo(repoA);
       const baseB = await initGitRepo(repoB);
 

@@ -125,7 +125,10 @@ test("getReportFilePath matches the canonical run report layout", () => {
   try {
     const reportPath = getReportFilePath(repo, "wf-1", "asg-1", "run-1");
     assert.equal(reportPath, getRunReportFile(repo, "wf-1", "asg-1", "run-1"));
-    assert.match(reportPath, /\.hydra\/workbenches\/wf-1\/dispatches\/asg-1\/runs\/run-1\/report\.md$/);
+    assert.match(
+      reportPath,
+      /\.hydra[\\/]+workbenches[\\/]+wf-1[\\/]+dispatches[\\/]+asg-1[\\/]+runs[\\/]+run-1[\\/]+report\.md$/,
+    );
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

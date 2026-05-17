@@ -7,6 +7,11 @@ import { AssignmentManager } from "./assignment/manager.ts";
 import { loadWorkbench } from "./workflow-store.ts";
 import { ensureLeadCaller } from "./lead-guard.ts";
 
+const TERMINAL_SHUTDOWN_WAIT_MS = 3_000;
+const TERMINAL_SHUTDOWN_POLL_MS = 100;
+const WORKTREE_REMOVE_RETRY_MS = 150;
+const WORKTREE_REMOVE_ATTEMPTS = 20;
+
 export interface CleanupArgs {
   agentId?: string;
   workbenchId?: string;
@@ -82,6 +87,46 @@ export function isLiveTerminalStatus(status: string): boolean {
   );
 }
 
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function waitForTerminalShutdown(
+  runtime: ReturnType<typeof getRuntime>,
+  terminalId: string,
+): void {
+  const deadline = Date.now() + TERMINAL_SHUTDOWN_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const { status } = runtime.terminalStatus(terminalId);
+      if (!isLiveTerminalStatus(status)) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    sleepSync(TERMINAL_SHUTDOWN_POLL_MS);
+  }
+}
+
+function retryExecFileSync(
+  file: string,
+  args: string[],
+  cwd: string,
+): void {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < WORKTREE_REMOVE_ATTEMPTS; attempt++) {
+    try {
+      execFileSync(file, args, { cwd, stdio: "pipe" });
+      return;
+    } catch (error) {
+      lastError = error;
+      sleepSync(WORKTREE_REMOVE_RETRY_MS);
+    }
+  }
+  throw lastError;
+}
+
 function isHydraManagedDispatchWorkspace(
   repoPath: string,
   worktreePath: string | undefined,
@@ -128,24 +173,24 @@ function cleanupOne(agentId: string, force: boolean): void {
     } catch {
       // Already destroyed
     }
+
+    waitForTerminalShutdown(runtime, record.terminalId);
   }
 
   if (record.ownWorktree) {
     try {
-      execFileSync("git", buildGitWorktreeRemoveArgs(record.worktreePath), {
-        cwd: record.repo,
-        stdio: "pipe",
-      });
+      retryExecFileSync(
+        "git",
+        buildGitWorktreeRemoveArgs(record.worktreePath),
+        record.repo,
+      );
     } catch {
       // Already removed
     }
 
     if (record.branch) {
       try {
-        execFileSync("git", buildGitBranchDeleteArgs(record.branch), {
-          cwd: record.repo,
-          stdio: "pipe",
-        });
+        retryExecFileSync("git", buildGitBranchDeleteArgs(record.branch), record.repo);
       } catch {
         // Already deleted
       }
@@ -222,6 +267,8 @@ export function cleanupWorkbench(workbenchId: string, repo: string, force: boole
       } catch {
         // terminal already gone
       }
+
+      waitForTerminalShutdown(runtime, terminalId);
     }
   }
 
@@ -230,10 +277,11 @@ export function cleanupWorkbench(workbenchId: string, repo: string, force: boole
   // Arbitrary user-provided worktree paths are out of scope for cleanup.
   for (const worktreePath of dispatchWorktrees) {
     try {
-      execFileSync("git", buildGitWorktreeRemoveArgs(worktreePath), {
-        cwd: workflow.repo_path,
-        stdio: "pipe",
-      });
+      retryExecFileSync(
+        "git",
+        buildGitWorktreeRemoveArgs(worktreePath),
+        workflow.repo_path,
+      );
     } catch {
       // worktree already removed
     }
@@ -241,10 +289,7 @@ export function cleanupWorkbench(workbenchId: string, repo: string, force: boole
 
   for (const branch of dispatchBranches) {
     try {
-      execFileSync("git", buildGitBranchDeleteArgs(branch), {
-        cwd: workflow.repo_path,
-        stdio: "pipe",
-      });
+      retryExecFileSync("git", buildGitBranchDeleteArgs(branch), workflow.repo_path);
     } catch {
       // branch already removed
     }
@@ -252,20 +297,18 @@ export function cleanupWorkbench(workbenchId: string, repo: string, force: boole
 
   if (workflow.own_worktree) {
     try {
-      execFileSync("git", buildGitWorktreeRemoveArgs(workflow.worktree_path), {
-        cwd: workflow.repo_path,
-        stdio: "pipe",
-      });
+      retryExecFileSync(
+        "git",
+        buildGitWorktreeRemoveArgs(workflow.worktree_path),
+        workflow.repo_path,
+      );
     } catch {
       // worktree already removed
     }
 
     if (workflow.branch) {
       try {
-        execFileSync("git", buildGitBranchDeleteArgs(workflow.branch), {
-          cwd: workflow.repo_path,
-          stdio: "pipe",
-        });
+        retryExecFileSync("git", buildGitBranchDeleteArgs(workflow.branch), workflow.repo_path);
       } catch {
         // branch already removed
       }

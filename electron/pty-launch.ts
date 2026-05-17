@@ -537,7 +537,8 @@ export async function buildLaunchSpec(
     "wuu",
   ]);
   if (options.terminalType && computerUseAwareTypes.has(options.terminalType)) {
-    const cuStateFile = path.join(
+    const targetPath = getPlatformPath(deps.platform);
+    const cuStateFile = targetPath.join(
       deps.homeDir(),
       ".termcanvas",
       "computer-use",

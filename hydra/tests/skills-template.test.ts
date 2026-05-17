@@ -116,13 +116,13 @@ test("task template links role guidance and result-only completion rules", () =>
 
   // ## Run Context contains the workflow / assignment / run identity.
   assert.match(rendered, /## Run Context/);
-  assert.match(rendered, /Role: reviewer/);
+  assert.doesNotMatch(rendered, /Role: reviewer/);
 
   assert.match(rendered, /## Objective/);
   assert.match(rendered, /## Read First/);
-  assert.match(rendered, /## Write Targets/);
+  assert.match(rendered, /## Output Files/);
   assert.match(rendered, /## Decision Rules/);
-  assert.match(rendered, /Root cause first/i);
+  assert.match(rendered, /independent judgment/i);
   assert.match(rendered, /Do not fake outputs/i);
   assert.match(rendered, /silent fallbacks/i);
   assert.match(rendered, /result\.json/);

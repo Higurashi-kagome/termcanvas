@@ -1,4 +1,4 @@
-import { describe, it, assert } from "node:test";
+import { describe, it } from "node:test";
 import { strict as a } from "node:assert";
 import { countPatchFiles, countPatchLines, taskMeta } from "../src/dataset.ts";
 import type { TaskDefinition } from "../src/types.ts";

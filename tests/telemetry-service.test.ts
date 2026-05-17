@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { DatabaseSync } from "node:sqlite";
 import {
   TelemetryService,
   deriveTelemetryStatus,
@@ -15,6 +14,13 @@ import {
   CODEX_PRE_TOOL_USE_AWAITING_INPUT_MS,
 } from "../shared/lifecycleThresholds.ts";
 import { WORKBENCH_STATE_SCHEMA_VERSION } from "../hydra/src/workflow-store.ts";
+
+let DatabaseSync: (typeof import("node:sqlite"))["DatabaseSync"] | null = null;
+try {
+  ({ DatabaseSync } = await import("node:sqlite"));
+} catch {
+  DatabaseSync = null;
+}
 
 function createRepoFixture() {
   const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), "telemetry-repo-"));
@@ -109,6 +115,9 @@ function writeOpenCodeSessionDb(
     assistantFinish?: "stop" | "tool-calls";
   },
 ): void {
+  if (!DatabaseSync) {
+    throw new Error("node:sqlite unavailable");
+  }
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const db = new DatabaseSync(filePath);
   try {
@@ -855,6 +864,10 @@ test("attachSessionSource extracts first_user_prompt from wuu session files", ()
 });
 
 test("attachSessionSource reads opencode first prompt and lifecycle from db", () => {
+  if (!DatabaseSync) {
+    test.skip("node:sqlite unavailable in this Node runtime");
+    return;
+  }
   const tmpDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "termcanvas-telemetry-opencode-session-"),
   );
@@ -898,6 +911,10 @@ test("attachSessionSource reads opencode first prompt and lifecycle from db", ()
 });
 
 test("attachSessionSource keeps opencode tool-call steps active and pushes first prompt", () => {
+  if (!DatabaseSync) {
+    test.skip("node:sqlite unavailable in this Node runtime");
+    return;
+  }
   const tmpDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "termcanvas-telemetry-opencode-active-"),
   );

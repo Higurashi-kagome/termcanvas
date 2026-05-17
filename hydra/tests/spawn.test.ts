@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import {
   parseSpawnArgs,
   generateAgentId,
@@ -86,13 +87,15 @@ test("buildGitWorktreeAddArgs preserves spaces and shell metacharacters", () => 
 });
 
 test("validateWorktreePath accepts repo root and nested worktrees", () => {
+  const repoRoot = path.resolve("/tmp/repo");
+  const nestedWorktree = path.join(repoRoot, ".worktrees", "existing");
   assert.equal(
     validateWorktreePath("/tmp/repo", "/tmp/repo"),
-    "/tmp/repo",
+    repoRoot,
   );
   assert.equal(
     validateWorktreePath("/tmp/repo", "/tmp/repo/.worktrees/existing"),
-    "/tmp/repo/.worktrees/existing",
+    nestedWorktree,
   );
 });
 

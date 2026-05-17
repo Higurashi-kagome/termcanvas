@@ -14,6 +14,10 @@ import { getTerminalExtraPathEntries } from "../electron/agent-shims.ts";
 
 const HOME_CLI_PATH = path.posix.join("/opt/homebrew/bin", "codex");
 
+function buildComputerUseStateFile(homeDir: string): string {
+  return path.posix.join(homeDir, ".termcanvas", "computer-use", "state.json");
+}
+
 function createDeps(overrides: Partial<LaunchResolverDeps> = {}): LaunchResolverDeps {
   return {
     platform: "darwin",
@@ -301,7 +305,7 @@ test("buildLaunchSpec injects TermCanvas instance routing into the PTY environme
 });
 
 test("buildLaunchSpec injects Computer Use MCP config into Codex argv", async () => {
-  const stateFile = "/Users/test/.termcanvas/computer-use/state.json";
+  const stateFile = buildComputerUseStateFile("/Users/test");
   const mcpServer = path.join(
     process.cwd(),
     "mcp",
@@ -347,7 +351,7 @@ test("buildLaunchSpec injects Computer Use MCP config into Codex argv", async ()
 });
 
 test("buildLaunchSpec injects Computer Use MCP config into Codex before helper is enabled", async () => {
-  const stateFile = "/Users/test/.termcanvas/computer-use/state.json";
+  const stateFile = buildComputerUseStateFile("/Users/test");
   const mcpServer = path.join(
     process.cwd(),
     "mcp",
@@ -388,7 +392,7 @@ test("buildLaunchSpec injects Computer Use MCP config into Codex before helper i
 });
 
 test("buildLaunchSpec injects Computer Use MCP config into Claude argv", async () => {
-  const stateFile = "/Users/test/.termcanvas/computer-use/state.json";
+  const stateFile = buildComputerUseStateFile("/Users/test");
   const mcpServer = path.join(
     process.cwd(),
     "mcp",
@@ -442,7 +446,7 @@ test("buildLaunchSpec injects Computer Use MCP config into Claude argv", async (
 });
 
 test("buildLaunchSpec exposes Computer Use state file to shell terminals without token", async () => {
-  const stateFile = "/Users/test/.termcanvas/computer-use/state.json";
+  const stateFile = buildComputerUseStateFile("/Users/test");
   const instructionsFile = path.join(
     process.cwd(),
     "skills",
@@ -469,7 +473,7 @@ test("buildLaunchSpec exposes Computer Use state file to shell terminals without
 });
 
 test("buildLaunchSpec exposes Computer Use bootstrap env to shell terminals before helper is enabled", async () => {
-  const stateFile = "/Users/test/.termcanvas/computer-use/state.json";
+  const stateFile = buildComputerUseStateFile("/Users/test");
   const instructionsFile = path.join(
     process.cwd(),
     "skills",
@@ -498,13 +502,16 @@ test("shell terminal extra PATH entries put agent shims after cliDir for launch 
   const entries = getTerminalExtraPathEntries(
     "/Applications/TermCanvas.app/Contents/Resources/cli",
     "shell",
-    (file) => file.endsWith("/agent-shims"),
+    (file) => file.replace(/\\/g, "/").endsWith("/agent-shims"),
   );
 
-  assert.deepEqual(entries, [
+  assert.deepEqual(
+    entries.map((entry) => entry.replace(/\\/g, "/")),
+    [
     "/Applications/TermCanvas.app/Contents/Resources/cli",
     "/Applications/TermCanvas.app/Contents/Resources/cli/agent-shims",
-  ]);
+    ],
+  );
 });
 
 test("managed agent terminals do not receive shell agent shim PATH entries", () => {

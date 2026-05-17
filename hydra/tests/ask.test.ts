@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { ChildProcess, spawn as NodeSpawn } from "node:child_process";
 import { askFollowUp } from "../src/ask.ts";
+import { resolveCliCommand } from "../src/cli-resolver.ts";
 
 // Minimal ChildProcess stand-in. Ask only touches stdout/stderr/on/kill.
 class FakeStream extends EventEmitter {
@@ -49,6 +50,7 @@ function makeSpawnImpl(): {
 
 test("askFollowUp (claude) builds the --resume --fork-session argv and parses the result envelope", async () => {
   const { spawnImpl, calls, lastChild } = makeSpawnImpl();
+  const resolvedClaude = resolveCliCommand("claude");
   const promise = askFollowUp({
     cli: "claude",
     sessionId: "original-session-abc",
@@ -74,17 +76,22 @@ test("askFollowUp (claude) builds the --resume --fork-session argv and parses th
 
   // argv shape
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].shell, "claude");
-  assert.deepEqual(calls[0].args.slice(0, 3), ["-p", "--output-format", "json"]);
-  assert.ok(calls[0].args.includes("--dangerously-skip-permissions"));
-  assert.ok(calls[0].args.includes("--resume"));
-  assert.equal(calls[0].args[calls[0].args.indexOf("--resume") + 1], "original-session-abc");
+  assert.equal(calls[0].shell, resolvedClaude.command);
+  assert.deepEqual(
+    calls[0].args.slice(0, resolvedClaude.argsPrefix.length),
+    resolvedClaude.argsPrefix,
+  );
+  const claudeArgs = calls[0].args.slice(resolvedClaude.argsPrefix.length);
+  assert.deepEqual(claudeArgs.slice(0, 3), ["-p", "--output-format", "json"]);
+  assert.ok(claudeArgs.includes("--dangerously-skip-permissions"));
+  assert.ok(claudeArgs.includes("--resume"));
+  assert.equal(claudeArgs[claudeArgs.indexOf("--resume") + 1], "original-session-abc");
   assert.ok(
-    calls[0].args.includes("--fork-session"),
+    claudeArgs.includes("--fork-session"),
     "follow-up must fork so the original session stays pristine",
   );
   // Last arg is the message.
-  assert.equal(calls[0].args[calls[0].args.length - 1], "why did you choose pattern A?");
+  assert.equal(claudeArgs[claudeArgs.length - 1], "why did you choose pattern A?");
 
   // Parsed output
   assert.equal(result.answer, "Because pattern A is thread-safe.");
@@ -95,6 +102,7 @@ test("askFollowUp (claude) builds the --resume --fork-session argv and parses th
 
 test("askFollowUp (codex) builds `exec resume <id>` without --cd and parses item.completed agent_message events", async () => {
   const { spawnImpl, calls, lastChild } = makeSpawnImpl();
+  const resolvedCodex = resolveCliCommand("codex");
   const promise = askFollowUp({
     cli: "codex",
     sessionId: "codex-thread-999",
@@ -125,16 +133,21 @@ test("askFollowUp (codex) builds `exec resume <id>` without --cd and parses item
   const result = await promise;
 
   // argv shape: `codex exec resume <sid> --dangerously-bypass... --skip-git-repo-check --json <msg>`
-  assert.equal(calls[0].shell, "codex");
-  assert.deepEqual(calls[0].args.slice(0, 3), ["exec", "resume", "codex-thread-999"]);
-  assert.ok(calls[0].args.includes("--dangerously-bypass-approvals-and-sandbox"));
-  assert.ok(calls[0].args.includes("--skip-git-repo-check"));
+  assert.equal(calls[0].shell, resolvedCodex.command);
+  assert.deepEqual(
+    calls[0].args.slice(0, resolvedCodex.argsPrefix.length),
+    resolvedCodex.argsPrefix,
+  );
+  const codexArgs = calls[0].args.slice(resolvedCodex.argsPrefix.length);
+  assert.deepEqual(codexArgs.slice(0, 3), ["exec", "resume", "codex-thread-999"]);
+  assert.ok(codexArgs.includes("--dangerously-bypass-approvals-and-sandbox"));
+  assert.ok(codexArgs.includes("--skip-git-repo-check"));
   assert.ok(
-    !calls[0].args.includes("--cd"),
+    !codexArgs.includes("--cd"),
     "codex exec resume inherits the subprocess cwd and no longer accepts --cd",
   );
-  assert.ok(calls[0].args.includes("--json"));
-  assert.equal(calls[0].args[calls[0].args.length - 1], "what exact files did you touch?");
+  assert.ok(codexArgs.includes("--json"));
+  assert.equal(codexArgs[codexArgs.length - 1], "what exact files did you touch?");
   assert.equal(calls[0].cwd, "/tmp/workdir");
 
   // Answer must come only from agent_message items, not reasoning items.

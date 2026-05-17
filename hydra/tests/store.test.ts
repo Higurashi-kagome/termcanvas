@@ -23,7 +23,7 @@ const record: AgentRecord = {
   id: "hydra-1234-abcd",
   task: "fix the bug",
   type: "claude",
-  repo: "/tmp/repo",
+  repo: path.resolve("/tmp/repo"),
   terminalId: "tc-001",
   worktreePath: "/tmp/repo/.worktrees/hydra-1234-abcd",
   branch: "hydra/1234-abcd",

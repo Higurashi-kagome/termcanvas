@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { AgentType } from "./assignment/types.ts";
+import { resolveCliCommand } from "./cli-resolver.ts";
 
 /**
  * Lead → completed node follow-up.
@@ -178,12 +179,13 @@ export async function askFollowUp(
     options.message,
     options.workdir,
   );
+  const resolvedCli = resolveCliCommand(shell, process.env);
   const spawnFn = options.spawnImpl ?? spawn;
   const timeoutMs = options.timeoutMs ?? 5 * 60_000;
   const start = Date.now();
 
   return await new Promise<AskFollowUpResult>((resolve, reject) => {
-    const child = spawnFn(shell, args, {
+    const child = spawnFn(resolvedCli.command, [...resolvedCli.argsPrefix, ...args], {
       cwd: options.workdir,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { DatabaseSync } from "node:sqlite";
 
 import {
   checkTurnComplete,
@@ -11,6 +10,13 @@ import {
   resolveSessionFile,
   toClaudeProjectKey,
 } from "../electron/session-watcher.ts";
+
+let DatabaseSync: (typeof import("node:sqlite"))["DatabaseSync"] | null = null;
+try {
+  ({ DatabaseSync } = await import("node:sqlite"));
+} catch {
+  DatabaseSync = null;
+}
 
 function withTempFile(content: string, fn: (filePath: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-watcher-"));
@@ -49,6 +55,9 @@ function writeStateDbThread(
     rolloutPath: string;
   },
 ): void {
+  if (!DatabaseSync) {
+    throw new Error("node:sqlite unavailable");
+  }
   const dbPath = path.join(homeDir, ".codex", "state_5.sqlite");
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
@@ -146,6 +155,10 @@ test("codex: detects task_complete event", () => {
 });
 
 test("codex resolveSessionFile prefers rollout_path from state db before the file exists", () => {
+  if (!DatabaseSync) {
+    test.skip("node:sqlite unavailable in this Node runtime");
+    return;
+  }
   withTempHome((homeDir) => {
     const sessionId = "db-session";
     const rolloutPath = path.join(

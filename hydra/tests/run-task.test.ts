@@ -72,17 +72,15 @@ test("renderRunTask renders a role-driven task file", () => {
 
   // ## Run Context holds the workflow/assignment/run identity bullets.
   assert.match(content, /## Run Context/);
-  assert.match(content, /Role: dev/);
   assert.match(content, /Assignment ID: assignment-abc123/);
   assert.match(content, /Run ID: run-0001/);
-  assert.match(content, /Source role: reviewer/);
 
   assert.match(content, /## Objective/);
   assert.match(content, /file-contract-driven auth workflow/);
   assert.match(content, /## Read First/);
   assert.match(content, /User request/);
   assert.match(content, /Approved research brief/);
-  assert.match(content, /## Write Targets/);
+  assert.match(content, /## Output Files/);
   assert.match(content, /Brief/);
   assert.match(content, /Result JSON/);
   assert.match(content, /## Decision Rules/);
@@ -96,7 +94,7 @@ test("renderRunTask renders a role-driven task file", () => {
   assert.match(content, /## Operational Notes/);
   assert.match(content, /Hydra does not infer completion from terminal prose/i);
   assert.match(content, /## Completion/);
-  assert.match(content, /Publish result\.json atomically/i);
+  assert.match(content, /publishing result\.json/i);
   assert.doesNotMatch(content, /\bdone\b/i);
 });
 

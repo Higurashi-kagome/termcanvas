@@ -7,6 +7,7 @@ import type {
   EvalConfig,
   TaskDefinition,
 } from "../types.ts";
+import { resolveCliCommand } from "../cli-resolver.ts";
 
 const DEFAULT_TIMEOUT_S = 1200;
 const POLL_INTERVAL_MS = 15_000;
@@ -42,7 +43,8 @@ function execWithStdin(
   options: { cwd?: string; timeout?: number; stdin?: string },
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawnChild(cmd, args, {
+    const resolved = resolveCliCommand(cmd);
+    const child = spawnChild(resolved.command, [...resolved.argsPrefix, ...args], {
       cwd: options.cwd,
       timeout: (options.timeout ?? DEFAULT_TIMEOUT_S) * 1000,
       stdio: ["pipe", "pipe", "pipe"],

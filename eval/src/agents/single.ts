@@ -6,6 +6,7 @@ import type {
   EvalConfig,
   TaskDefinition,
 } from "../types.ts";
+import { resolveCliCommand } from "../cli-resolver.ts";
 
 const COST_PER_1K_INPUT_TOKENS = 0.015;
 const COST_PER_1K_OUTPUT_TOKENS = 0.075;
@@ -32,7 +33,8 @@ function execWithStdin(
   options: { cwd?: string; timeout?: number; stdin?: string },
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawnChild(cmd, args, {
+    const resolved = resolveCliCommand(cmd);
+    const child = spawnChild(resolved.command, [...resolved.argsPrefix, ...args], {
       cwd: options.cwd,
       timeout: (options.timeout ?? DEFAULT_TIMEOUT_S) * 1000,
       stdio: ["pipe", "pipe", "pipe"],

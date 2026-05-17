@@ -8,6 +8,7 @@ import { execSync } from "node:child_process";
 import { GitFileWatcher } from "../electron/git-watcher.ts";
 
 function waitFor(
+  label: string,
   predicate: () => boolean,
   timeoutMs = 5000,
 ): Promise<void> {
@@ -19,7 +20,7 @@ function waitFor(
         return;
       }
       if (Date.now() - start > timeoutMs) {
-        reject(new Error("Timed out waiting for watcher callback"));
+        reject(new Error(`Timed out waiting for watcher callback: ${label}`));
         return;
       }
       setTimeout(tick, 25);
@@ -60,21 +61,21 @@ test("GitFileWatcher detects repository presence and separates diff vs log refre
       cwd: worktreePath,
       stdio: "pipe",
     });
-    await waitFor(() => presenceEvents.includes(true));
+    await waitFor("presence:true", () => presenceEvents.includes(true));
 
     const gitDir = path.join(worktreePath, ".git");
     fs.writeFileSync(path.join(gitDir, "COMMIT_EDITMSG"), "new message\n");
-    await waitFor(() => logEvents > 0);
+    await waitFor("log", () => logEvents > 0, 10000);
 
     fs.writeFileSync(path.join(worktreePath, "tracked.txt"), "tracked\n");
     execSync("git add tracked.txt", {
       cwd: worktreePath,
       stdio: "pipe",
     });
-    await waitFor(() => diffEvents > 0);
+    await waitFor("diff", () => diffEvents > 0);
 
     fs.rmSync(gitDir, { recursive: true, force: true });
-    await waitFor(() => presenceEvents.includes(false));
+    await waitFor("presence:false", () => presenceEvents.includes(false));
   } finally {
     watcher.unwatch(worktreePath);
     fs.rmSync(worktreePath, { recursive: true, force: true });

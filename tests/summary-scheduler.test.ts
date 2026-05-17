@@ -28,6 +28,7 @@ function installGlobals(generateSummary: () => Promise<SummaryResult>) {
   const termcanvas = {
     app: {
       platform: "darwin" as const,
+      setQuitOnLastWindowClosed: () => {},
     },
     summary: {
       generate: generateSummary,
