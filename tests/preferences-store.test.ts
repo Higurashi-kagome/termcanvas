@@ -183,3 +183,54 @@ test("preferences persist completed terminal edge glow toggle", async () => {
   const raw = JSON.parse(localStorage.getItem("termcanvas-preferences")!);
   assert.equal(raw.completionGlowEnabled, true);
 });
+
+test("preferences default terminal selection auto copy to enabled", async () => {
+  installLocalStorage();
+
+  const { usePreferencesStore } = await loadPreferencesStoreModule(
+    "selection-auto-copy-default",
+  );
+
+  assert.equal(
+    usePreferencesStore.getState().terminalSelectionAutoCopyEnabled,
+    true,
+  );
+});
+
+test("preferences load persisted terminal selection auto copy setting", async () => {
+  installLocalStorage(
+    JSON.stringify({
+      terminalSelectionAutoCopyEnabled: false,
+    }),
+  );
+
+  const { usePreferencesStore } = await loadPreferencesStoreModule(
+    "selection-auto-copy-load",
+  );
+
+  assert.equal(
+    usePreferencesStore.getState().terminalSelectionAutoCopyEnabled,
+    false,
+  );
+});
+
+test("preferences persist terminal selection auto copy toggle", async () => {
+  installLocalStorage();
+
+  const { usePreferencesStore } = await loadPreferencesStoreModule(
+    "selection-auto-copy-persist",
+  );
+  const store = usePreferencesStore.getState();
+
+  assert.equal(store.terminalSelectionAutoCopyEnabled, true);
+
+  store.setTerminalSelectionAutoCopyEnabled(false);
+
+  assert.equal(
+    usePreferencesStore.getState().terminalSelectionAutoCopyEnabled,
+    false,
+  );
+
+  const raw = JSON.parse(localStorage.getItem("termcanvas-preferences")!);
+  assert.equal(raw.terminalSelectionAutoCopyEnabled, false);
+});
