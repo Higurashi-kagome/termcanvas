@@ -1728,6 +1728,10 @@ function setupIpc() {
   ipcMain.handle("fs:list-ignored-files", async (_event, dirPath: string) => {
     const { execFile } = await import("child_process");
     try {
+      if (!(await isGitRepo(dirPath))) {
+        return [] as string[];
+      }
+
       const stdout = await new Promise<string>((resolve, reject) => {
         execFile(
           "git",
