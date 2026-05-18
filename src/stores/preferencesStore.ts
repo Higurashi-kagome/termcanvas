@@ -33,6 +33,7 @@ interface PreferencesStore {
   petEnabled: boolean;
   completionGlowEnabled: boolean;
   activityHeatmapEnabled: boolean;
+  terminalSelectionAutoCopyEnabled: boolean;
   trackpadSwipeFocusEnabled: boolean;
   quitOnLastWindowClosed: boolean;
   summaryCli: "claude" | "codex";
@@ -72,6 +73,7 @@ interface PreferencesStore {
   setPetEnabled: (value: boolean) => void;
   setCompletionGlowEnabled: (value: boolean) => void;
   setActivityHeatmapEnabled: (value: boolean) => void;
+  setTerminalSelectionAutoCopyEnabled: (value: boolean) => void;
   setTrackpadSwipeFocusEnabled: (value: boolean) => void;
   setQuitOnLastWindowClosed: (value: boolean) => void;
   setSummaryCli: (value: "claude" | "codex") => void;
@@ -99,6 +101,7 @@ interface SavedPrefs {
   petEnabled: boolean;
   completionGlowEnabled: boolean;
   activityHeatmapEnabled: boolean;
+  terminalSelectionAutoCopyEnabled: boolean;
   trackpadSwipeFocusEnabled: boolean;
   quitOnLastWindowClosed: boolean;
   summaryCli: "claude" | "codex";
@@ -223,6 +226,11 @@ function loadPreferences(): SavedPrefs {
       let activityHeatmapEnabled = false;
       if (parsed.activityHeatmapEnabled === true) activityHeatmapEnabled = true;
 
+      let terminalSelectionAutoCopyEnabled = true;
+      if (parsed.terminalSelectionAutoCopyEnabled === false) {
+        terminalSelectionAutoCopyEnabled = false;
+      }
+
       let trackpadSwipeFocusEnabled = false;
       if (parsed.trackpadSwipeFocusEnabled === true) trackpadSwipeFocusEnabled = true;
 
@@ -264,6 +272,7 @@ function loadPreferences(): SavedPrefs {
         petEnabled,
         completionGlowEnabled,
         activityHeatmapEnabled,
+        terminalSelectionAutoCopyEnabled,
         trackpadSwipeFocusEnabled,
         quitOnLastWindowClosed,
         summaryCli,
@@ -289,6 +298,7 @@ function loadPreferences(): SavedPrefs {
     petEnabled: false,
     completionGlowEnabled: false,
     activityHeatmapEnabled: false,
+    terminalSelectionAutoCopyEnabled: true,
     trackpadSwipeFocusEnabled: false,
     quitOnLastWindowClosed: false,
     summaryCli: "claude",
@@ -394,6 +404,7 @@ function getSaveState(state: PreferencesStore): SavedPrefs {
     petEnabled: state.petEnabled,
     completionGlowEnabled: state.completionGlowEnabled,
     activityHeatmapEnabled: state.activityHeatmapEnabled,
+    terminalSelectionAutoCopyEnabled: state.terminalSelectionAutoCopyEnabled,
     trackpadSwipeFocusEnabled: state.trackpadSwipeFocusEnabled,
     quitOnLastWindowClosed: state.quitOnLastWindowClosed,
     summaryCli: state.summaryCli,
@@ -420,6 +431,8 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => ({
   petEnabled: initialPrefs.petEnabled,
   completionGlowEnabled: initialPrefs.completionGlowEnabled,
   activityHeatmapEnabled: initialPrefs.activityHeatmapEnabled,
+  terminalSelectionAutoCopyEnabled:
+    initialPrefs.terminalSelectionAutoCopyEnabled,
   trackpadSwipeFocusEnabled: initialPrefs.trackpadSwipeFocusEnabled,
   quitOnLastWindowClosed: initialPrefs.quitOnLastWindowClosed,
   summaryCli: initialPrefs.summaryCli,
@@ -484,6 +497,12 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => ({
   setActivityHeatmapEnabled: (value) => {
     set({ activityHeatmapEnabled: value });
     savePreferences(getSaveState({ ...get(), activityHeatmapEnabled: value }));
+  },
+  setTerminalSelectionAutoCopyEnabled: (value) => {
+    set({ terminalSelectionAutoCopyEnabled: value });
+    savePreferences(
+      getSaveState({ ...get(), terminalSelectionAutoCopyEnabled: value }),
+    );
   },
   setTrackpadSwipeFocusEnabled: (value) => {
     set({ trackpadSwipeFocusEnabled: value });

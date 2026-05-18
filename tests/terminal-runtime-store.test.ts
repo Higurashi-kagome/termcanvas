@@ -193,6 +193,8 @@ test("terminal host shortcut helpers classify Windows, macOS, and Linux paste/co
 test("terminal clipboard helpers paste text and copy selections through clipboard APIs", async () => {
   const mockWindow = installRuntimeGlobals();
   mockWindow.__setClipboardText("hello from clipboard");
+  const { usePreferencesStore } = await import("../src/stores/preferencesStore.ts");
+  usePreferencesStore.setState({ terminalSelectionAutoCopyEnabled: false });
   const terminalRuntimeModule = await import(
     "../src/terminal/terminalRuntimeStore.ts"
   ) as unknown as Record<string, unknown>;
@@ -274,6 +276,212 @@ test("terminal clipboard helpers paste text and copy selections through clipboar
     useTerminalRuntimeStore.getState().terminals["terminal-1"]?.copiedNonce,
     1,
   );
+});
+
+test("terminal selection auto copy writes clipboard on mouseup when enabled", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    termcanvas: unknown;
+  };
+  const { usePreferencesStore } = await import("../src/stores/preferencesStore.ts");
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    attachTerminalContainer,
+    destroyAllTerminalRuntimes,
+    ensureTerminalRuntime,
+    getTerminalRuntime,
+    useTerminalRuntimeStore,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+  const previousPreferencesState = usePreferencesStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    usePreferencesStore.setState({ terminalSelectionAutoCopyEnabled: true });
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    useTerminalRuntimeStore.setState({
+      terminals: {
+        "terminal-1": {
+          copiedNonce: 0,
+          mode: "live",
+          previewText: "",
+          telemetry: null,
+        },
+      },
+    });
+
+    const host = createFakeContainer();
+    const visibleContainer = createFakeContainer();
+    visibleContainer.appendChild(host);
+    const { xterm, setSelectionText, emitSelectionChange } = createMockXterm();
+
+    runtime.attachedContainer = visibleContainer as unknown as HTMLDivElement;
+    runtime.fitAddon = {
+      fit() {},
+    } as typeof runtime.fitAddon;
+    runtime.hostElement = host as unknown as HTMLDivElement;
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+
+    attachTerminalContainer(
+      "terminal-1",
+      visibleContainer as unknown as HTMLDivElement,
+    );
+
+    await navigator.clipboard.writeText("previous clipboard");
+
+    host.dispatchEvent("mousedown");
+    setSelectionText("copied by selection");
+    emitSelectionChange();
+    window.dispatchEvent(new Event("mouseup"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(await navigator.clipboard.readText(), "copied by selection");
+    assert.equal(
+      useTerminalRuntimeStore.getState().terminals["terminal-1"]?.copiedNonce,
+      1,
+    );
+  } finally {
+    destroyAllTerminalRuntimes();
+    usePreferencesStore.setState(previousPreferencesState);
+    useProjectStore.setState(previousProjectState);
+  }
+});
+
+test("terminal selection auto copy does not write clipboard on mouseup when disabled", async () => {
+  const mockWindow = installRuntimeGlobals() as Window & {
+    termcanvas: unknown;
+  };
+  const { usePreferencesStore } = await import("../src/stores/preferencesStore.ts");
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+  const {
+    attachTerminalContainer,
+    destroyAllTerminalRuntimes,
+    ensureTerminalRuntime,
+    getTerminalRuntime,
+    useTerminalRuntimeStore,
+  } = await import("../src/terminal/terminalRuntimeStore.ts");
+  const previousProjectState = useProjectStore.getState();
+  const previousPreferencesState = usePreferencesStore.getState();
+
+  destroyAllTerminalRuntimes();
+
+  try {
+    seedProjectState(useProjectStore);
+    usePreferencesStore.setState({ terminalSelectionAutoCopyEnabled: false });
+    mockWindow.termcanvas = {
+      app: { platform: "win32" },
+      session: {
+        onTurnComplete() {
+          return () => {};
+        },
+      },
+      terminal: {
+        create: async () => 42,
+        destroy: async () => {},
+        input() {},
+        notifyThemeChanged() {},
+        onExit() {
+          return () => {};
+        },
+        onOutput() {
+          return () => {};
+        },
+        resize() {},
+      },
+    };
+
+    ensureTerminalRuntime({
+      projectId: "project-1",
+      terminal: useProjectStore.getState().projects[0].worktrees[0].terminals[0],
+      worktreeId: "worktree-1",
+      worktreePath: "/tmp/project-1",
+    });
+
+    const runtime = getTerminalRuntime("terminal-1");
+    assert.ok(runtime);
+    if (!runtime) return;
+
+    useTerminalRuntimeStore.setState({
+      terminals: {
+        "terminal-1": {
+          copiedNonce: 0,
+          mode: "live",
+          previewText: "",
+          telemetry: null,
+        },
+      },
+    });
+
+    const host = createFakeContainer();
+    const visibleContainer = createFakeContainer();
+    visibleContainer.appendChild(host);
+    const { xterm, setSelectionText, emitSelectionChange } = createMockXterm();
+
+    runtime.attachedContainer = visibleContainer as unknown as HTMLDivElement;
+    runtime.fitAddon = {
+      fit() {},
+    } as typeof runtime.fitAddon;
+    runtime.hostElement = host as unknown as HTMLDivElement;
+    runtime.xterm = xterm as unknown as typeof runtime.xterm;
+
+    attachTerminalContainer(
+      "terminal-1",
+      visibleContainer as unknown as HTMLDivElement,
+    );
+
+    await navigator.clipboard.writeText("previous clipboard");
+
+    host.dispatchEvent("mousedown");
+    setSelectionText("should not auto copy");
+    emitSelectionChange();
+    window.dispatchEvent(new Event("mouseup"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(await navigator.clipboard.readText(), "previous clipboard");
+    assert.equal(
+      useTerminalRuntimeStore.getState().terminals["terminal-1"]?.copiedNonce,
+      0,
+    );
+  } finally {
+    destroyAllTerminalRuntimes();
+    usePreferencesStore.setState(previousPreferencesState);
+    useProjectStore.setState(previousProjectState);
+  }
 });
 
 test("Windows host key handler pastes clipboard text for Ctrl+V and keeps it out of the PTY input path", async () => {
@@ -900,11 +1108,44 @@ function seedProjectState(
 }
 
 function createFakeContainer() {
+  const listeners = new Map<string, Array<(event: Event) => void>>();
   const node = {
     children: [] as Array<ReturnType<typeof createFakeContainer>>,
     parentElement: null as ReturnType<typeof createFakeContainer> | null,
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      const entries = listeners.get(type) ?? [];
+      entries.push(toEventListener(listener));
+      listeners.set(type, entries);
+    },
+    removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+    ) {
+      const entries = listeners.get(type);
+      if (!entries) {
+        return;
+      }
+
+      const normalized = toEventListener(listener);
+      const index = entries.findIndex((entry) => entry === normalized);
+      if (index >= 0) {
+        entries.splice(index, 1);
+      }
+      if (entries.length === 0) {
+        listeners.delete(type);
+      }
+    },
+    dispatchEvent(eventOrType: Event | string) {
+      const event =
+        typeof eventOrType === "string"
+          ? ({ type: eventOrType } as Event)
+          : eventOrType;
+      const entries = listeners.get(event.type) ?? [];
+      for (const listener of [...entries]) {
+        listener(event);
+      }
+      return true;
+    },
     appendChild(child: ReturnType<typeof createFakeContainer>) {
       child.parentElement?.removeChild(child);
       this.children.push(child);
@@ -926,6 +1167,7 @@ function createFakeContainer() {
 function createMockXterm() {
   let customKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
   let selectionText = "";
+  let selectionChangeListener: (() => void) | null = null;
   const pastePayloads: string[] = [];
   const element = createFakeEventNode((text: string) => {
     pastePayloads.push(text);
@@ -987,10 +1229,12 @@ function createMockXterm() {
         },
       };
     },
-    onSelectionChange() {
+    onSelectionChange(listener: () => void) {
+      selectionChangeListener = listener;
       stats.selectionSubscriptions += 1;
       return {
         dispose() {
+          selectionChangeListener = null;
           stats.selectionBindingDisposeCalls += 1;
         },
       };
@@ -1017,6 +1261,9 @@ function createMockXterm() {
 
   return {
     fitAddon,
+    emitSelectionChange() {
+      selectionChangeListener?.();
+    },
     pastePayloads,
     setSelectionText(value: string) {
       selectionText = value;

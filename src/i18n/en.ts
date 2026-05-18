@@ -177,6 +177,10 @@ export const en = {
   git_hunk_failed: (message: string) => `Hunk operation failed: ${message}`,
   global_search_toggle: "Global Search (Cmd+K)",
   global_search_toggle_desc: "Experimental. Search across files, sessions, commits, memory, and actions",
+  terminal_selection_auto_copy_toggle:
+    "Copy terminal selection automatically",
+  terminal_selection_auto_copy_toggle_desc:
+    "When enabled, selecting text in a terminal copies it to the clipboard on mouse release.",
   search_placeholder: "Search everything\u2026",
   search_placeholder_browse:
     "Type to filter, or browse recent sessions below",

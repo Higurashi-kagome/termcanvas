@@ -176,6 +176,9 @@ export const zh = {
   git_hunk_failed: (message: string) => `区块操作失败：${message}`,
   global_search_toggle: "全局搜索 (Cmd+K)",
   global_search_toggle_desc: "实验性功能。跨文件、会话、提交、记忆和操作搜索",
+  terminal_selection_auto_copy_toggle: "终端选区自动复制",
+  terminal_selection_auto_copy_toggle_desc:
+    "开启后，在终端中用鼠标选中文本并释放时，会自动复制到剪贴板。",
   search_placeholder: "搜索所有内容…",
   search_placeholder_browse: "输入过滤,或直接浏览下方最近会话",
   search_no_results: "无搜索结果",
