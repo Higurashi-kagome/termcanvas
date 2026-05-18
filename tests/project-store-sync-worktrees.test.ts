@@ -185,6 +185,121 @@ test("syncWorktrees clears removed runtime state and normalizes focused worktree
   assert.deepEqual(useTerminalRuntimeStateStore.getState().terminals, {});
 });
 
+test("syncWorktrees preserves terminals when Windows path separators change format", () => {
+  const project: ProjectData = {
+    id: "project-win",
+    name: "Windows Project",
+    path: "E:\\repo\\demo",
+    worktrees: [
+      {
+        id: "worktree-win-main",
+        name: "(unknown)",
+        path: "E:\\repo\\demo",
+        isPrimary: true,
+        terminals: [createTerminalFixture("terminal-win", "Windows Terminal")],
+      },
+    ],
+  };
+
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    termcanvas: {
+      app: { platform: "win32" },
+    },
+  } as unknown as Window & typeof globalThis;
+
+  resetStore([project]);
+  useTerminalRuntimeStateStore
+    .getState()
+    .setSessionId("terminal-win", "session-win");
+
+  try {
+    useProjectStore.getState().syncWorktrees("E:\\repo\\demo", [
+      { path: "E:/repo/demo", branch: "master", isPrimary: true },
+    ]);
+
+    const state = useProjectStore.getState();
+    assert.equal(state.projects.length, 1);
+    assert.equal(state.projects[0].worktrees.length, 1);
+    assert.equal(state.projects[0].worktrees[0].name, "master");
+    assert.equal(state.projects[0].worktrees[0].terminals.length, 1);
+    assert.equal(
+      state.projects[0].worktrees[0].terminals[0].id,
+      "terminal-win",
+    );
+    assert.equal(
+      useTerminalRuntimeStateStore.getState().terminals["terminal-win"]
+        ?.sessionId,
+      "session-win",
+    );
+  } finally {
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: Window & typeof globalThis }).window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
+});
+
+test("syncWorktrees matches the top-level Windows projectPath after slash normalization", () => {
+  const project: ProjectData = {
+    id: "project-win-top-level",
+    name: "Windows Project Top Level",
+    path: "E:\\repo\\demo",
+    worktrees: [
+      {
+        id: "worktree-win-top-level-main",
+        name: "(unknown)",
+        path: "E:\\repo\\demo",
+        isPrimary: true,
+        terminals: [
+          createTerminalFixture("terminal-win-top-level", "Windows Top Level"),
+        ],
+      },
+    ],
+  };
+
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    termcanvas: {
+      app: { platform: "win32" },
+    },
+  } as unknown as Window & typeof globalThis;
+
+  resetStore([project]);
+  useTerminalRuntimeStateStore
+    .getState()
+    .setSessionId("terminal-win-top-level", "session-win-top-level");
+
+  try {
+    useProjectStore.getState().syncWorktrees("E:/repo/demo", [
+      { path: "E:/repo/demo", branch: "master", isPrimary: true },
+    ]);
+
+    const state = useProjectStore.getState();
+    assert.equal(state.projects.length, 1);
+    assert.equal(state.projects[0].worktrees.length, 1);
+    assert.equal(state.projects[0].worktrees[0].name, "master");
+    assert.equal(state.projects[0].worktrees[0].terminals.length, 1);
+    assert.equal(
+      state.projects[0].worktrees[0].terminals[0].id,
+      "terminal-win-top-level",
+    );
+    assert.equal(
+      useTerminalRuntimeStateStore.getState().terminals[
+        "terminal-win-top-level"
+      ]?.sessionId,
+      "session-win-top-level",
+    );
+  } finally {
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: Window & typeof globalThis }).window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
+});
+
 test("addTerminal adds a terminal with auto-tags", () => {
   const project = createProject();
   resetStore([project]);

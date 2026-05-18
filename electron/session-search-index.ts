@@ -43,6 +43,10 @@ import {
 import { findCodexJsonlFiles, findKimiSessionFiles } from "./usage-collector.ts";
 import { stripSyntheticUserBlocks } from "./session-scanner.ts";
 import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
+import {
+  normalizePathForComparison,
+  type PathComparisonPlatform,
+} from "../shared/path-comparison.ts";
 
 export interface SessionSearchEntry {
   sessionId: string;
@@ -99,13 +103,10 @@ const FIRST_PROMPT_MAX_LENGTH = 200;
  * filtered out due to formatting-only path differences.
  */
 function normalizeProjectPathForMatch(projectDir: string): string {
-  const trimmed = projectDir.trim();
-  if (!trimmed) return "";
-
-  const normalized = path.normalize(trimmed);
-  return process.platform === "win32"
-    ? normalized.toLowerCase()
-    : normalized;
+  return normalizePathForComparison(
+    path.normalize(projectDir.trim()),
+    process.platform as PathComparisonPlatform,
+  );
 }
 
 function decodeClaudeEncodedPath(encoded: string): string {
