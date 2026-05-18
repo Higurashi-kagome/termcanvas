@@ -41,6 +41,38 @@ test("notifyThemeChanged ignores unknown PTYs", async () => {
   assert.ok(true);
 });
 
+test("resize ignores PTYs that already exited", async () => {
+  const { PtyManager } = await import(
+    `../electron/pty-manager.ts?resize-unknown=${Date.now()}`,
+  );
+  const manager = new PtyManager();
+  manager.resize(999, 120, 40);
+  assert.ok(true);
+});
+
+test("resize swallows exited PTY errors and evicts the stale instance", async () => {
+  const { PtyManager } = await import(
+    `../electron/pty-manager.ts?resize-exited=${Date.now()}`,
+  );
+  const manager = new PtyManager() as PtyManager & {
+    instances: Map<number, { pid: number; resize: (cols: number, rows: number) => void }>;
+    outputBuffers: Map<number, string[]>;
+  };
+  manager.instances.set(7, {
+    pid: 0,
+    resize() {
+      throw new Error("Cannot resize a pty that has already exited");
+    },
+  });
+  manager.outputBuffers.set(7, ["old output"]);
+
+  assert.doesNotThrow(() => {
+    manager.resize(7, 120, 40);
+  });
+  assert.equal(manager.instances.has(7), false);
+  assert.equal(manager.outputBuffers.has(7), false);
+});
+
 test(
   "create retries transient PTY spawn failures before surfacing an error",
   { skip: process.platform === "win32" },

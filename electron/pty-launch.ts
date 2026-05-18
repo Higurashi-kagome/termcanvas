@@ -602,7 +602,9 @@ export async function buildLaunchSpec(
       return {
         cwd: options.cwd,
         file: commandShell,
-        args: ["/d", "/s", "/c", executable, ...launchArgs],
+        // `node-pty` runs this through `cmd.exe`, where batch launchers with
+        // spaces in their path only resume reliably when invoked via `call`.
+        args: ["/d", "/s", "/c", "call", executable, ...launchArgs],
         env: shellEnv,
       };
     }

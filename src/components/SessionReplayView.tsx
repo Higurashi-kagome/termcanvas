@@ -9,6 +9,7 @@ import { createTerminalInScene } from "../actions/terminalSceneActions";
 import { createTerminal } from "../stores/projectStore";
 import { panToTerminal } from "../utils/panToTerminal";
 import type { TerminalType } from "../types";
+import { normalizeProjectPathForMatch } from "../../shared/project-path-match.ts";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { markdownClassName, renderMarkdown } from "../utils/markdownClass";
 
@@ -1181,10 +1182,15 @@ export function SessionReplayView() {
     if (!timeline) return null;
     const provider = providerFromFilePath(timeline.filePath);
     if (!provider) return null;
+    const targetProjectDir = normalizeProjectPathForMatch(timeline.projectDir);
     const projects = useProjectStore.getState().projects;
     for (const project of projects) {
       for (const worktree of project.worktrees) {
-        if (worktree.path === timeline.projectDir) {
+        // Session history stores the raw cwd reported by the CLI, while canvas
+        // worktrees keep whatever path spelling was scanned into app state. On
+        // Windows those often differ only by slash direction or drive-letter
+        // casing, so normalize before matching to keep Resume available.
+        if (normalizeProjectPathForMatch(worktree.path) === targetProjectDir) {
           return {
             provider,
             projectId: project.id,

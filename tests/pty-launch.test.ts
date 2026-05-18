@@ -658,7 +658,49 @@ test("buildLaunchSpec wraps Windows .cmd launchers with cmd.exe", async () => {
     "/d",
     "/s",
     "/c",
+    "call",
     "C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd",
+    "--resume",
+    "abc123",
+  ]);
+});
+
+test("buildLaunchSpec uses call for Windows .cmd launchers whose resolved path contains spaces", async () => {
+  const launch = await buildLaunchSpec(
+    {
+      cwd: "C:\\repo",
+      shell: "claude",
+      args: ["--resume", "abc123"],
+    },
+    createWindowsDeps({
+      existsSync: (file) =>
+        [
+          "C:\\repo",
+          "D:\\Program Files\\Anthropic\\claude.cmd",
+          "C:\\Windows\\System32\\cmd.exe",
+        ].includes(file),
+      isExecutable: (file) =>
+        [
+          "D:\\Program Files\\Anthropic\\claude.cmd",
+          "C:\\Windows\\System32\\cmd.exe",
+        ].includes(file),
+      getShellEnv: async () => ({
+        LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+        APPDATA: "C:\\Users\\test\\AppData\\Roaming",
+        USERPROFILE: "C:\\Users\\test",
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+        PATH: "D:\\Program Files\\Anthropic",
+      }),
+    }),
+  );
+
+  assert.equal(launch.file, "C:\\Windows\\System32\\cmd.exe");
+  assert.deepEqual(launch.args, [
+    "/d",
+    "/s",
+    "/c",
+    "call",
+    "D:\\Program Files\\Anthropic\\claude.cmd",
     "--resume",
     "abc123",
   ]);
