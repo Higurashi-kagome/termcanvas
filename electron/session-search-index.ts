@@ -43,6 +43,7 @@ import {
 import { findCodexJsonlFiles, findKimiSessionFiles } from "./usage-collector.ts";
 import { stripSyntheticUserBlocks } from "./session-scanner.ts";
 import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
+import { normalizeProjectPathForMatch } from "../shared/project-path-match.ts";
 
 export interface SessionSearchEntry {
   sessionId: string;
@@ -87,26 +88,6 @@ const HEAD_LINES_FOR_PROMPT = 50;
 const MAX_FILE_SIZE_FOR_INDEX = 20 * 1024 * 1024;
 const AVG_LINE_BYTES_ESTIMATE = 500;
 const FIRST_PROMPT_MAX_LENGTH = 200;
-
-/**
- * Normalize a project path for set membership checks in the session index.
- *
- * The history panel passes canvas worktree paths exactly as stored in app
- * state, while Codex/Kimi session files report their cwd exactly as emitted by
- * the CLI. On Windows these two sources often differ only by slash style
- * (`E:/repo/app` vs `E:\repo\app`) and sometimes by drive-letter casing. We
- * normalize both sides before comparison so the same project does not get
- * filtered out due to formatting-only path differences.
- */
-function normalizeProjectPathForMatch(projectDir: string): string {
-  const trimmed = projectDir.trim();
-  if (!trimmed) return "";
-
-  const normalized = path.normalize(trimmed);
-  return process.platform === "win32"
-    ? normalized.toLowerCase()
-    : normalized;
-}
 
 function decodeClaudeEncodedPath(encoded: string): string {
   // Claude stores projects under `-Users-foo-bar`; decode back to
