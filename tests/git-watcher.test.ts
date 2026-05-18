@@ -29,6 +29,10 @@ function waitFor(
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("GitFileWatcher detects repository presence and separates diff vs log refresh signals", async () => {
   const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), "git-watcher-test-"));
   const watcher = new GitFileWatcher();
@@ -64,8 +68,14 @@ test("GitFileWatcher detects repository presence and separates diff vs log refre
     await waitFor("presence:true", () => presenceEvents.includes(true));
 
     const gitDir = path.join(worktreePath, ".git");
+    // `git init` can keep `.git` busy long enough that the watcher's debounced
+    // log callback arrives well after repository presence flips to true on
+    // heavily loaded Windows CI hosts. Let that initial burst settle before
+    // asserting the explicit COMMIT_EDITMSG signal.
+    await sleep(1500);
+    const initialLogEvents = logEvents;
     fs.writeFileSync(path.join(gitDir, "COMMIT_EDITMSG"), "new message\n");
-    await waitFor("log", () => logEvents > 0, 10000);
+    await waitFor("log", () => logEvents > initialLogEvents, 20000);
 
     fs.writeFileSync(path.join(worktreePath, "tracked.txt"), "tracked\n");
     execSync("git add tracked.txt", {
