@@ -376,6 +376,9 @@ export const zh = {
   completion_glow_toggle: "完成终端边缘提示",
   completion_glow_toggle_desc:
     "实验性功能。当左右两侧仍有已结束但未查看的终端时，高亮对应屏幕边缘",
+  terminal_body_click_pan_toggle: "点击终端内容区时居中",
+  terminal_body_click_pan_toggle_desc:
+    "开启后，点击终端输出内容区域时会将该终端移动到画布中心，无需点击标题栏",
   trackpad_swipe_focus_toggle: "触控板滑动切换聚焦",
   trackpad_swipe_focus_toggle_desc:
     "实验性功能。在画布上使用双指横向滑动，在聚焦终端和全景视图之间切换",

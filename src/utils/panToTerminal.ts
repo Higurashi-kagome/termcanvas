@@ -22,6 +22,8 @@ interface PanToTerminalOptions {
   preserveScale?: boolean;
   duration?: number;
   easing?: (t: number) => number;
+  focusInput?: boolean;
+  focusComposer?: boolean;
 }
 
 function findTerminal(terminalId: string) {
@@ -137,8 +139,14 @@ export function panToTerminal(
   }
 
   if (shouldFocusTerminal) {
-    focusTerminalInScene(terminalId);
-    activateTerminalInScene(projectId, worktreeId, terminalId);
+    focusTerminalInScene(terminalId, {
+      focusComposer: opts?.focusComposer,
+      focusInput: opts?.focusInput,
+    });
+    activateTerminalInScene(projectId, worktreeId, terminalId, {
+      focusComposer: opts?.focusComposer,
+      focusInput: opts?.focusInput,
+    });
   } else {
     selectTerminalInScene(projectId, worktreeId, terminalId);
   }

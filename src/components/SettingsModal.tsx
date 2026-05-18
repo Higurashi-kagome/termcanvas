@@ -816,14 +816,16 @@ export function SettingsModal({ onClose }: Props) {
     setSummaryEnabled,
     globalSearchEnabled,
     setGlobalSearchEnabled,
-    petEnabled,
-    setPetEnabled,
-    completionGlowEnabled,
-    setCompletionGlowEnabled,
-    terminalSelectionAutoCopyEnabled,
-    setTerminalSelectionAutoCopyEnabled,
-    trackpadSwipeFocusEnabled,
-    setTrackpadSwipeFocusEnabled,
+      petEnabled,
+      setPetEnabled,
+      completionGlowEnabled,
+      setCompletionGlowEnabled,
+      terminalSelectionAutoCopyEnabled,
+      setTerminalSelectionAutoCopyEnabled,
+      panToTerminalOnBodyClickEnabled,
+      setPanToTerminalOnBodyClickEnabled,
+      trackpadSwipeFocusEnabled,
+      setTrackpadSwipeFocusEnabled,
     quitOnLastWindowClosed,
     setQuitOnLastWindowClosed,
     summaryCli,
@@ -1510,6 +1512,15 @@ export function SettingsModal({ onClose }: Props) {
                       <OnOffSegment
                         value={terminalSelectionAutoCopyEnabled}
                         onChange={setTerminalSelectionAutoCopyEnabled}
+                      />
+                    </SettingsRow>
+                    <SettingsRow
+                      label={t.terminal_body_click_pan_toggle}
+                      description={t.terminal_body_click_pan_toggle_desc}
+                    >
+                      <OnOffSegment
+                        value={panToTerminalOnBodyClickEnabled}
+                        onChange={setPanToTerminalOnBodyClickEnabled}
                       />
                     </SettingsRow>
                     {isMac && (

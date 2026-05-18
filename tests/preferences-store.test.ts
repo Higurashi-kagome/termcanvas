@@ -234,3 +234,23 @@ test("preferences persist terminal selection auto copy toggle", async () => {
   const raw = JSON.parse(localStorage.getItem("termcanvas-preferences")!);
   assert.equal(raw.terminalSelectionAutoCopyEnabled, false);
 });
+
+test("preferences persist terminal body click pan toggle", async () => {
+  installLocalStorage();
+
+  const { usePreferencesStore } = await loadPreferencesStoreModule(
+    "terminal-body-click-pan-toggle",
+  );
+  const store = usePreferencesStore.getState();
+
+  assert.equal(store.panToTerminalOnBodyClickEnabled, false);
+
+  store.setPanToTerminalOnBodyClickEnabled(true);
+  assert.equal(
+    usePreferencesStore.getState().panToTerminalOnBodyClickEnabled,
+    true,
+  );
+
+  const raw = JSON.parse(localStorage.getItem("termcanvas-preferences")!);
+  assert.equal(raw.panToTerminalOnBodyClickEnabled, true);
+});

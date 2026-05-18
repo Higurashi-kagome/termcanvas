@@ -386,6 +386,9 @@ export const en = {
   completion_glow_toggle: "Completed terminal edge glow",
   completion_glow_toggle_desc:
     "Experimental. Highlights the left or right screen edge when completed terminals still need attention",
+  terminal_body_click_pan_toggle: "Center canvas on terminal body click",
+  terminal_body_click_pan_toggle_desc:
+    "When enabled, clicking the terminal output area recenters that terminal without using the title bar",
   trackpad_swipe_focus_toggle: "Trackpad swipe to toggle focus",
   trackpad_swipe_focus_toggle_desc:
     "Experimental. Two-finger horizontal swipe on canvas to toggle between zoom-focus and fit-all view",
