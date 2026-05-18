@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 
 import { ensureCliLauncher } from "./cli-launchers.ts";
+import { normalizePathForComparison } from "../shared/path-comparison.ts";
 
 const CLI_NAMES = ["termcanvas", "hydra", "browse"] as const;
 const WINDOWS_PATH_KEY = "HKCU\\Environment";
@@ -168,15 +169,7 @@ function broadcastWindowsEnvironmentChange(): void {
 }
 
 export function normalizeWindowsPathForComparison(entry: string): string {
-  const unquoted = entry.trim().replace(/^"(.*)"$/, "$1");
-  if (!unquoted) return "";
-
-  const normalized = path.win32.normalize(unquoted);
-  const root = path.win32.parse(normalized).root;
-  const trimmed = normalized === root
-    ? normalized
-    : normalized.replace(/[\\/]+$/, "");
-  return trimmed.toLowerCase();
+  return normalizePathForComparison(entry, "win32");
 }
 
 function splitPathEntries(pathValue: string | null | undefined): string[] {
