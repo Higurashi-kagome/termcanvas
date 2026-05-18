@@ -1072,6 +1072,10 @@ function wireSelectionBindings(
   disposeSelectionBindings(runtime);
 
   const maybeAutoCopySelection = () => {
+    if (!usePreferencesStore.getState().terminalSelectionAutoCopyEnabled) {
+      return;
+    }
+
     const text = xterm.getSelection();
     if (
       !shouldAutoCopyTerminalSelection(
