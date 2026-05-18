@@ -197,6 +197,61 @@ test("TerminalTile keeps minimize and close controls visible without hover", asy
   assert.equal((html.match(/data-visible="always"/g) ?? []).length, 2);
 });
 
+test("TerminalTile shows recovered preview when a live restored terminal has scrollback but no PTY", async () => {
+  const terminal: TerminalData = {
+    id: "terminal-restore",
+    title: "Terminal",
+    type: "codex",
+    minimized: false,
+    focused: false,
+    ptyId: null,
+    status: "idle",
+    span: { cols: 1, rows: 1 },
+    scrollback: "Recovered Codex output",
+  };
+
+  Object.assign(globalThis, {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    },
+  });
+
+  const { TerminalTile } = await import("../src/terminal/TerminalTile.tsx");
+  const { useTerminalRuntimeStore } = await import(
+    "../src/terminal/terminalRuntimeStore.ts"
+  );
+
+  useTerminalRuntimeStore.setState({
+    terminals: {
+      [terminal.id]: {
+        copiedNonce: 0,
+        mode: "live",
+        previewText: "",
+        telemetry: null,
+      },
+    },
+  });
+
+  const html = renderToStaticMarkup(
+    createElement(TerminalTile, {
+      lodMode: "live",
+      projectId: "project-1",
+      worktreeId: "worktree-1",
+      worktreeName: "main",
+      worktreePath: "/tmp/project-1-main",
+      terminal,
+      width: 640,
+      height: 480,
+    }),
+  );
+
+  assert.match(html, /Recovered Codex output/);
+  assert.match(html, /preview fallback/);
+  assert.doesNotMatch(html, /tc-xterm-host/);
+});
+
 test("withToggledTerminalStarred flips the terminal star state", () => {
   const terminal: TerminalData = {
     id: "terminal-1",

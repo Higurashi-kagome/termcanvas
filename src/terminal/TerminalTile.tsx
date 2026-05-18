@@ -212,9 +212,10 @@ export function TerminalTile({
     (s) => s.terminals[terminal.id]?.copiedNonce ?? 0,
   );
   const mountNonceRef = useRef(copiedNonce);
-  const previewText = useTerminalRuntimeStore(
-    (s) => s.terminals[terminal.id]?.previewText ?? "",
+  const runtimeSnapshot = useTerminalRuntimeStore(
+    (s) => s.terminals[terminal.id],
   );
+  const previewText = runtimeSnapshot?.previewText ?? terminal.scrollback ?? "";
   const [dragOver, setDragOver] = useState(false);
   const agentBodyRef = useRef<HTMLDivElement>(null);
   const [agentBodySize, setAgentBodySize] = useState<{
@@ -260,6 +261,12 @@ export function TerminalTile({
     ...terminal,
     ...liveRuntimeState,
   };
+  const shouldShowRecoveredPreview =
+    lodMode === "live" &&
+    !terminal.minimized &&
+    !useAgentRenderer &&
+    liveTerminal.ptyId == null &&
+    previewText.trim().length > 0;
 
   const [frozenDims, setFrozenDims] = useState<{
     width: number;
@@ -1203,7 +1210,7 @@ export function TerminalTile({
             />
           )}
         </div>
-      ) : lodMode === "live" ? (
+      ) : lodMode === "live" && !shouldShowRecoveredPreview ? (
         <div
           className={
             terminal.minimized
@@ -1266,7 +1273,10 @@ export function TerminalTile({
           }}
         >
           {!terminal.minimized && (
-            <PreviewPane lodMode={lodMode} previewText={previewText} />
+            <PreviewPane
+              lodMode={shouldShowRecoveredPreview ? "evicted" : lodMode}
+              previewText={previewText}
+            />
           )}
         </div>
       )}
