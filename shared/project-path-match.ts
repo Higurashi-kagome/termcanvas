@@ -1,4 +1,4 @@
-import path from "node:path";
+import { normalizePathForComparison } from "./path-comparison.ts";
 
 /**
  * Normalize project/worktree paths before matching session history entries to
@@ -10,15 +10,10 @@ import path from "node:path";
  * key off the real location instead of the raw string shape.
  */
 export function normalizeProjectPathForMatch(projectDir: string): string {
-  const trimmed = projectDir.trim();
-  if (!trimmed) return "";
-
-  const normalized = isWindowsLikePath(trimmed)
-    ? path.win32.normalize(trimmed).replace(/\\/g, "/")
-    : path.posix.normalize(trimmed);
-
-  return isWindowsLikePath(trimmed)
-    ? normalized.toLowerCase()
+  const platform = isWindowsLikePath(projectDir) ? "win32" : "darwin";
+  const normalized = normalizePathForComparison(projectDir, platform);
+  return platform === "win32"
+    ? normalized.replace(/\\/g, "/")
     : normalized;
 }
 
