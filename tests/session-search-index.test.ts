@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   clearSessionIndexCache,
+  listSessionGroupsForScope,
   listSessionTreesForProjects,
   listSessionsForProjects,
   listSessionsForProjectsPaged,
@@ -279,5 +280,131 @@ test("listSessionTreesForProjects recognizes Codex subagent parent_thread_id as 
       trees[0]?.roots[0]?.children.map((node) => node.sessionId),
       ["child-session"],
     );
+  });
+});
+
+test("listSessionGroupsForScope keeps project-root sessions at the project level and groups exact worktree sessions separately", async () => {
+  await withTempHome(async (homeDir) => {
+    const projectFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "19",
+      "project-root.jsonl",
+    );
+    const worktreeFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "19",
+      "worktree-root.jsonl",
+    );
+    writeJsonl(projectFile, [
+      {
+        timestamp: "2026-05-19T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "project-session",
+          cwd: "/repo",
+        },
+      },
+      {
+        timestamp: "2026-05-19T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "project root prompt",
+        },
+      },
+    ]);
+    writeJsonl(worktreeFile, [
+      {
+        timestamp: "2026-05-19T11:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "worktree-session",
+          cwd: "/repo/.worktrees/feat-auto-focus",
+        },
+      },
+      {
+        timestamp: "2026-05-19T11:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "worktree prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "/repo",
+        worktreePaths: ["/repo/.worktrees/feat-auto-focus"],
+      },
+    ]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]?.projectPath, "/repo");
+    assert.equal(groups[0]?.projectTree?.projectDir, "/repo");
+    assert.deepEqual(
+      groups[0]?.projectTree?.roots.map((node) => node.sessionId),
+      ["project-session"],
+    );
+    assert.deepEqual(
+      groups[0]?.worktrees.map((group) => group.worktreePath),
+      ["/repo/.worktrees/feat-auto-focus"],
+    );
+    assert.deepEqual(
+      groups[0]?.worktrees[0]?.tree.roots.map((node) => node.sessionId),
+      ["worktree-session"],
+    );
+  });
+});
+
+test("listSessionGroupsForScope omits worktrees with no exact-match sessions and ignores descendant directories", async () => {
+  await withTempHome(async (homeDir) => {
+    const descendantFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "19",
+      "worktree-descendant.jsonl",
+    );
+    writeJsonl(descendantFile, [
+      {
+        timestamp: "2026-05-19T12:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "descendant-session",
+          cwd: "/repo/.worktrees/feat-auto-focus/subdir",
+        },
+      },
+      {
+        timestamp: "2026-05-19T12:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "descendant prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "/repo",
+        worktreePaths: [
+          "/repo/.worktrees/feat-auto-focus",
+          "/repo/.worktrees/unused",
+        ],
+      },
+    ]);
+
+    assert.equal(groups.length, 0);
   });
 });

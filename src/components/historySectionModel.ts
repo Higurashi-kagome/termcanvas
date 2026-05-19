@@ -1,4 +1,9 @@
-import type { SessionHistoryNode } from "../../shared/sessions";
+import type {
+  SessionHistoryNode,
+  SessionHistoryProjectGroup,
+  SessionHistoryProjectTree,
+  SessionHistoryWorktreeGroup,
+} from "../../shared/sessions";
 
 export function shouldRefreshHistorySection(
   projectDirs: string[],
@@ -117,6 +122,54 @@ export function collectVisibleHistoryRoots(
   return roots.slice(0, Math.max(0, limit));
 }
 
+export function filterHiddenProjectTree(
+  tree: SessionHistoryProjectTree | null,
+  hidden: ReadonlySet<string>,
+): SessionHistoryProjectTree | null {
+  if (!tree) return null;
+
+  const roots = tree.roots
+    .map((root) => filterHistoryNode(root, hidden))
+    .filter((root): root is SessionHistoryNode => root !== null);
+
+  if (roots.length === 0) {
+    return null;
+  }
+
+  return {
+    ...tree,
+    roots,
+    rootCount: roots.length,
+    latestActivityAt: roots[0]?.treeLastActivityAt ?? "",
+  };
+}
+
+export function buildVisibleHistoryGroups(
+  groups: SessionHistoryProjectGroup[],
+  hidden: ReadonlySet<string> = new Set(),
+): SessionHistoryProjectGroup[] {
+  return groups
+    .map((group) => {
+      const projectTree = filterHiddenProjectTree(group.projectTree, hidden);
+      const worktrees = group.worktrees
+        .map((worktree) => {
+          const tree = filterHiddenProjectTree(worktree.tree, hidden);
+          if (!tree) return null;
+          return { ...worktree, tree };
+        })
+        .filter((worktree): worktree is SessionHistoryWorktreeGroup => worktree !== null);
+
+      if (!projectTree && worktrees.length === 0) return null;
+
+      return {
+        ...group,
+        projectTree,
+        worktrees,
+      };
+    })
+    .filter((group): group is SessionHistoryProjectGroup => group !== null);
+}
+
 function containsHistoryNode(
   node: SessionHistoryNode,
   sessionId: string,
@@ -145,4 +198,34 @@ function walkHistoryNode(
   for (const child of node.children) {
     walkHistoryNode(child, visitor);
   }
+}
+
+function filterHistoryNode(
+  node: SessionHistoryNode,
+  hidden: ReadonlySet<string>,
+): SessionHistoryNode | null {
+  if (hidden.has(node.sessionId)) {
+    return null;
+  }
+
+  const children = node.children
+    .map((child) => filterHistoryNode(child, hidden))
+    .filter((child): child is SessionHistoryNode => child !== null);
+
+  const treeLastActivityAt = children.reduce(
+    (latest, child) =>
+      new Date(child.treeLastActivityAt).getTime() >
+      new Date(latest).getTime()
+        ? child.treeLastActivityAt
+        : latest,
+    node.lastActivityAt,
+  );
+
+  return {
+    ...node,
+    children,
+    hasChildren: children.length > 0,
+    childCount: children.length,
+    treeLastActivityAt,
+  };
 }

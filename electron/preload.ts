@@ -547,6 +547,13 @@ contextBridge.exposeInMainWorld("termcanvas", {
       ipcRenderer.invoke("search:sessions:list-trees", projectDirs) as Promise<
         import("../shared/sessions").SessionHistoryProjectTree[]
       >,
+    listSessionGroups: (
+      scopeProjects: import("../shared/sessions").SessionHistoryScopeProject[],
+    ) =>
+      ipcRenderer.invoke(
+        "search:sessions:list-groups",
+        scopeProjects,
+      ) as Promise<import("../shared/sessions").SessionHistoryProjectGroup[]>,
   },
   state: {
     load: () => ipcRenderer.invoke("state:load"),

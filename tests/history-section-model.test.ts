@@ -2,14 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildVisibleHistoryGroups,
   collectVisibleHistoryRoots,
+  filterHiddenProjectTree,
   filterHiddenEntries,
   groupHistoryByProject,
   hideHistorySubtree,
   resolvePinnedHistoryRoot,
   shouldRefreshHistorySection,
 } from "../src/components/historySectionModel.ts";
-import type { SessionHistoryNode } from "../shared/sessions.ts";
+import type {
+  SessionHistoryNode,
+  SessionHistoryProjectGroup,
+  SessionHistoryProjectTree,
+} from "../shared/sessions.ts";
 
 test("shouldRefreshHistorySection only refreshes overlapping project scopes", () => {
   assert.equal(
@@ -138,4 +144,85 @@ test("collectVisibleHistoryRoots applies the root limit only to roots", () => {
     visible.map((entry) => entry.sessionId),
     ["root-a"],
   );
+});
+
+test("filterHiddenProjectTree removes hidden descendants while keeping visible siblings", () => {
+  const tree: SessionHistoryProjectTree = {
+    projectDir: "/repo",
+    roots: [node("root", [node("child"), node("sibling")])],
+    sessionCount: 3,
+    rootCount: 1,
+    latestActivityAt: "2026-05-18T10:00:00.000Z",
+  };
+
+  const filtered = filterHiddenProjectTree(tree, new Set(["child"]));
+
+  assert.equal(filtered?.roots.length, 1);
+  assert.deepEqual(
+    filtered?.roots[0]?.children.map((entry) => entry.sessionId),
+    ["sibling"],
+  );
+});
+
+test("buildVisibleHistoryGroups preserves worktree labels", () => {
+  const groups: SessionHistoryProjectGroup[] = [
+    {
+      projectPath: "/repo",
+      projectLabel: "repo",
+      projectTree: {
+        projectDir: "/repo",
+        roots: [node("project-root")],
+        sessionCount: 1,
+        rootCount: 1,
+        latestActivityAt: "2026-05-19T10:00:00.000Z",
+      },
+      worktrees: [
+        {
+          worktreePath: "/repo/.worktrees/feat-auto-focus",
+          worktreeLabel: "feat-auto-focus",
+          tree: {
+            projectDir: "/repo/.worktrees/feat-auto-focus",
+            roots: [node("worktree-root")],
+            sessionCount: 1,
+            rootCount: 1,
+            latestActivityAt: "2026-05-19T11:00:00.000Z",
+          },
+        },
+      ],
+      latestActivityAt: "2026-05-19T11:00:00.000Z",
+    },
+  ];
+
+  const visible = buildVisibleHistoryGroups(groups);
+
+  assert.equal(visible[0]?.projectLabel, "repo");
+  assert.equal(visible[0]?.worktrees[0]?.worktreeLabel, "feat-auto-focus");
+});
+
+test("buildVisibleHistoryGroups removes worktrees whose trees are fully hidden", () => {
+  const groups: SessionHistoryProjectGroup[] = [
+    {
+      projectPath: "/repo",
+      projectLabel: "repo",
+      projectTree: null,
+      worktrees: [
+        {
+          worktreePath: "/repo/.worktrees/feat-auto-focus",
+          worktreeLabel: "feat-auto-focus",
+          tree: {
+            projectDir: "/repo/.worktrees/feat-auto-focus",
+            roots: [node("worktree-root")],
+            sessionCount: 1,
+            rootCount: 1,
+            latestActivityAt: "2026-05-19T11:00:00.000Z",
+          },
+        },
+      ],
+      latestActivityAt: "2026-05-19T11:00:00.000Z",
+    },
+  ];
+
+  const visible = buildVisibleHistoryGroups(groups, new Set(["worktree-root"]));
+
+  assert.deepEqual(visible, []);
 });
