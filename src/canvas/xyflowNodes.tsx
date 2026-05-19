@@ -3,8 +3,9 @@ import {
   type Node,
   type NodeProps,
   type NodeTypes,
-  NodeResizer,
+  NodeResizeControl,
 } from "@xyflow/react";
+import { ResizeControlVariant, type ControlPosition } from "@xyflow/react";
 import { useProjectStore } from "../stores/projectStore";
 import { useCanvasStore } from "../stores/canvasStore";
 import { usePinStore } from "../stores/pinStore";
@@ -20,6 +21,22 @@ import { rectIntersectsCanvasViewport } from "./viewportBounds";
 import { resolveCollisions } from "./collisionResolver";
 
 const SNAP_GRID = 10;
+const RESIZE_HANDLE_POSITIONS: ControlPosition[] = [
+  "top-left",
+  "top",
+  "top-right",
+  "right",
+  "bottom-right",
+  "bottom",
+  "bottom-left",
+  "left",
+];
+const RESIZE_LINE_POSITIONS: ControlPosition[] = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+];
 
 function snapTo(value: number, grid: number): number {
   return Math.round(value / grid) * grid;
@@ -225,25 +242,48 @@ function TerminalNode({ data }: NodeProps<TerminalFlowNode>) {
     return null;
   }
 
+  const resizeControlsVisible = hovered || terminal.focused;
+
   return (
     <div
       className="h-full w-full"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <NodeResizer
-        isVisible={hovered}
-        minWidth={300}
-        minHeight={200}
-        handleStyle={{
-          width: 8,
-          height: 8,
-          background: "var(--surface)",
-          borderColor: "var(--border-hover)",
-        }}
-        onResize={handleResize}
-        onResizeEnd={handleResizeEnd}
-      />
+      {RESIZE_LINE_POSITIONS.map((position) => (
+        <NodeResizeControl
+          key={`line-${position}`}
+          position={position}
+          variant={ResizeControlVariant.Line}
+          minWidth={300}
+          minHeight={200}
+          style={{
+            opacity: resizeControlsVisible ? 1 : 0,
+            pointerEvents: resizeControlsVisible ? "auto" : "none",
+          }}
+          onResize={handleResize}
+          onResizeEnd={handleResizeEnd}
+        />
+      ))}
+      {RESIZE_HANDLE_POSITIONS.map((position) => (
+        <NodeResizeControl
+          key={position}
+          position={position}
+          variant={ResizeControlVariant.Handle}
+          minWidth={300}
+          minHeight={200}
+          style={{
+            width: 8,
+            height: 8,
+            background: "var(--surface)",
+            borderColor: "var(--border-hover)",
+            opacity: resizeControlsVisible ? 1 : 0,
+            pointerEvents: resizeControlsVisible ? "auto" : "none",
+          }}
+          onResize={handleResize}
+          onResizeEnd={handleResizeEnd}
+        />
+      ))}
       <TerminalTile
         lodMode={lodMode}
         projectId={data.projectId}
