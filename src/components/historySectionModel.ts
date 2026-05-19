@@ -170,6 +170,106 @@ export function buildVisibleHistoryGroups(
     .filter((group): group is SessionHistoryProjectGroup => group !== null);
 }
 
+export type VisibleHistoryGroupSection =
+  | {
+      kind: "project";
+      latestActivityAt: string;
+      projectTree: SessionHistoryProjectTree;
+    }
+  | {
+      kind: "worktree";
+      latestActivityAt: string;
+      worktree: SessionHistoryWorktreeGroup;
+    };
+
+export function buildVisibleHistoryGroupSections(
+  group: SessionHistoryProjectGroup,
+): VisibleHistoryGroupSection[] {
+  const sections: VisibleHistoryGroupSection[] = [];
+  if (group.projectTree) {
+    sections.push({
+      kind: "project",
+      latestActivityAt: group.projectTree.latestActivityAt,
+      projectTree: group.projectTree,
+    });
+  }
+
+  for (const worktree of group.worktrees) {
+    sections.push({
+      kind: "worktree",
+      latestActivityAt: worktree.tree.latestActivityAt,
+      worktree,
+    });
+  }
+
+  sections.sort((a, b) => b.latestActivityAt.localeCompare(a.latestActivityAt));
+  return sections;
+}
+
+export type LimitedVisibleHistoryGroupSection =
+  | {
+      kind: "project";
+      latestActivityAt: string;
+      projectTree: SessionHistoryProjectTree;
+      visibleRoots: SessionHistoryNode[];
+    }
+  | {
+      kind: "worktree";
+      latestActivityAt: string;
+      worktree: SessionHistoryWorktreeGroup;
+    };
+
+export function countHistoryGroupTopLevelItems(
+  group: SessionHistoryProjectGroup,
+): number {
+  return (group.projectTree?.roots.length ?? 0) + group.worktrees.length;
+}
+
+export function buildLimitedVisibleHistoryGroupSections(
+  group: SessionHistoryProjectGroup,
+  limit: number,
+): {
+  sections: LimitedVisibleHistoryGroupSection[];
+  hiddenCount: number;
+} {
+  const sections = buildVisibleHistoryGroupSections(group);
+  const cappedLimit = Math.max(0, limit);
+  let remaining = cappedLimit;
+  const visibleSections: LimitedVisibleHistoryGroupSection[] = [];
+
+  for (const section of sections) {
+    if (remaining <= 0) break;
+
+    if (section.kind === "project") {
+      const visibleRoots = collectVisibleHistoryRoots(
+        section.projectTree.roots,
+        remaining,
+      );
+      if (visibleRoots.length === 0) continue;
+      visibleSections.push({
+        ...section,
+        visibleRoots,
+      });
+      remaining -= visibleRoots.length;
+      continue;
+    }
+
+    visibleSections.push(section);
+    remaining -= 1;
+  }
+
+  const visibleCount = visibleSections.reduce(
+    (sum, section) =>
+      sum + (section.kind === "project" ? section.visibleRoots.length : 1),
+    0,
+  );
+
+  return {
+    sections: visibleSections,
+    hiddenCount: Math.max(0, countHistoryGroupTopLevelItems(group) - visibleCount),
+  };
+}
+
 function containsHistoryNode(
   node: SessionHistoryNode,
   sessionId: string,

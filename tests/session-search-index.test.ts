@@ -408,3 +408,49 @@ test("listSessionGroupsForScope omits worktrees with no exact-match sessions and
     assert.equal(groups.length, 0);
   });
 });
+
+test("listSessionGroupsForScope does not duplicate project-root sessions when scope worktrees include the project path", async () => {
+  await withTempHome(async (homeDir) => {
+    const projectFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "19",
+      "project-root-duplicate-scope.jsonl",
+    );
+    writeJsonl(projectFile, [
+      {
+        timestamp: "2026-05-19T13:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "project-session",
+          cwd: "/repo",
+        },
+      },
+      {
+        timestamp: "2026-05-19T13:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "project root prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "/repo",
+        worktreePaths: ["/repo"],
+      },
+    ]);
+
+    assert.equal(groups.length, 1);
+    assert.deepEqual(
+      groups[0]?.projectTree?.roots.map((node) => node.sessionId),
+      ["project-session"],
+    );
+    assert.deepEqual(groups[0]?.worktrees, []);
+  });
+});

@@ -169,7 +169,9 @@ export function LeftPanel() {
     () =>
       projects.map((project) => ({
         projectPath: project.path,
-        worktreePaths: project.worktrees.map((worktree) => worktree.path),
+        worktreePaths: project.worktrees
+          .filter((worktree) => worktree.path !== project.path)
+          .map((worktree) => worktree.path),
       })),
     [projects],
   );

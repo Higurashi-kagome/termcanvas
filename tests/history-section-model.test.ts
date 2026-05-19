@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildLimitedVisibleHistoryGroupSections,
   buildVisibleHistoryGroups,
+  buildVisibleHistoryGroupSections,
+  countHistoryGroupTopLevelItems,
   collectVisibleHistoryRoots,
   filterHiddenProjectTree,
   filterHiddenEntries,
@@ -225,4 +228,113 @@ test("buildVisibleHistoryGroups removes worktrees whose trees are fully hidden",
   const visible = buildVisibleHistoryGroups(groups, new Set(["worktree-root"]));
 
   assert.deepEqual(visible, []);
+});
+
+test("buildVisibleHistoryGroupSections sorts project and worktree sections by latest activity", () => {
+  const sections = buildVisibleHistoryGroupSections({
+    projectPath: "/repo",
+    projectLabel: "repo",
+    projectTree: {
+      projectDir: "/repo",
+      roots: [node("project-root")],
+      sessionCount: 1,
+      rootCount: 1,
+      latestActivityAt: "2026-05-19T10:00:00.000Z",
+    },
+    worktrees: [
+      {
+        worktreePath: "/repo/.worktrees/feat-auto-focus",
+        worktreeLabel: "feat-auto-focus",
+        tree: {
+          projectDir: "/repo/.worktrees/feat-auto-focus",
+          roots: [node("worktree-root")],
+          sessionCount: 1,
+          rootCount: 1,
+          latestActivityAt: "2026-05-19T11:00:00.000Z",
+        },
+      },
+    ],
+    latestActivityAt: "2026-05-19T11:00:00.000Z",
+  });
+
+  assert.deepEqual(
+    sections.map((section) => section.kind),
+    ["worktree", "project"],
+  );
+});
+
+test("countHistoryGroupTopLevelItems counts project roots and worktree headers", () => {
+  const count = countHistoryGroupTopLevelItems({
+    projectPath: "/repo",
+    projectLabel: "repo",
+    projectTree: {
+      projectDir: "/repo",
+      roots: [node("project-root-a"), node("project-root-b")],
+      sessionCount: 2,
+      rootCount: 2,
+      latestActivityAt: "2026-05-19T10:00:00.000Z",
+    },
+    worktrees: [
+      {
+        worktreePath: "/repo/.worktrees/feat-a",
+        worktreeLabel: "feat-a",
+        tree: {
+          projectDir: "/repo/.worktrees/feat-a",
+          roots: [node("worktree-root-a")],
+          sessionCount: 1,
+          rootCount: 1,
+          latestActivityAt: "2026-05-19T11:00:00.000Z",
+        },
+      },
+    ],
+    latestActivityAt: "2026-05-19T11:00:00.000Z",
+  });
+
+  assert.equal(count, 3);
+});
+
+test("buildLimitedVisibleHistoryGroupSections applies the limit to visible top-level rows", () => {
+  const result = buildLimitedVisibleHistoryGroupSections(
+    {
+      projectPath: "/repo",
+      projectLabel: "repo",
+      projectTree: {
+        projectDir: "/repo",
+        roots: [node("project-root-a"), node("project-root-b")],
+        sessionCount: 2,
+        rootCount: 2,
+        latestActivityAt: "2026-05-19T10:00:00.000Z",
+      },
+      worktrees: [
+        {
+          worktreePath: "/repo/.worktrees/feat-a",
+          worktreeLabel: "feat-a",
+          tree: {
+            projectDir: "/repo/.worktrees/feat-a",
+            roots: [node("worktree-root-a")],
+            sessionCount: 1,
+            rootCount: 1,
+            latestActivityAt: "2026-05-19T11:00:00.000Z",
+          },
+        },
+      ],
+      latestActivityAt: "2026-05-19T11:00:00.000Z",
+    },
+    2,
+  );
+
+  assert.equal(result.hiddenCount, 1);
+  assert.deepEqual(
+    result.sections.map((section) => section.kind),
+    ["worktree", "project"],
+  );
+  const projectSection = result.sections.find(
+    (section) => section.kind === "project",
+  );
+  assert.deepEqual(
+    projectSection && projectSection.kind === "project"
+      ? projectSection.visibleRoots.map((root) => root.sessionId)
+      : [],
+    ["project-root-a"],
+  );
 });

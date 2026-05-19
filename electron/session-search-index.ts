@@ -722,7 +722,18 @@ function buildScopedHistoryGroup(
     (entry) => normalizeProjectPathForMatch(entry.projectDir) === projectPathKey,
   );
 
-  const worktrees = scope.worktreePaths
+  const uniqueWorktreePaths = [
+    ...new Map(
+      scope.worktreePaths
+        .map((worktreePath) => [
+          normalizeProjectPathForMatch(worktreePath),
+          worktreePath,
+        ] as const)
+        .filter(([worktreePathKey]) => worktreePathKey && worktreePathKey !== projectPathKey),
+    ).values(),
+  ];
+
+  const worktrees = uniqueWorktreePaths
     .map((worktreePath) => {
       const worktreePathKey = normalizeProjectPathForMatch(worktreePath);
       const worktreeEntries = entries.filter(

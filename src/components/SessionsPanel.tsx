@@ -51,8 +51,8 @@ import {
   CollapsibleTrigger,
 } from "./ui/collapsible";
 import {
+  buildLimitedVisibleHistoryGroupSections,
   buildVisibleHistoryGroups,
-  collectVisibleHistoryRoots,
   filterHiddenProjectTree,
   hideHistorySubtree,
   resolvePinnedHistoryRoot,
@@ -102,6 +102,10 @@ function formatItemTime(item: CanvasTerminalItem): string {
     return formatShortAge(item.turnStartedAt);
   }
   return formatShortAge(item.activityAt);
+}
+
+function formatHistoryTime(iso: string): string {
+  return formatShortAge(iso);
 }
 
 function summarizeToolName(value: string): string {
@@ -281,6 +285,34 @@ function traceToneClass(item: InspectorTraceItem): string {
     default:
       return "text-[var(--text-muted)]";
   }
+}
+
+function BranchIcon() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 12 12"
+      fill="none"
+      className="shrink-0"
+      aria-hidden="true"
+    >
+      <path
+        d="M4 2.5v3.2c0 .6.4 1 1 1h1.2c.8 0 1.4.6 1.4 1.4V9.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 2.5l-1.2 1.2M4 2.5l1.2 1.2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 function formatTraceLabel(
@@ -858,6 +890,10 @@ export function HistorySection({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
+  // Worktree groups default collapsed; expanding them is opt-in.
+  const [expandedWorktreeGroups, setExpandedWorktreeGroups] = useState<
+    Set<string>
+  >(new Set());
   // Per-project root display limit. Absent = HISTORY_GROUP_DEFAULT_LIMIT.
   const [groupLimits, setGroupLimits] = useState<Map<string, number>>(
     new Map(),
@@ -868,6 +904,15 @@ export function HistorySection({
       const next = new Set(prev);
       if (next.has(groupKey)) next.delete(groupKey);
       else next.add(groupKey);
+      return next;
+    });
+  }, []);
+
+  const toggleWorktreeGroup = useCallback((worktreePath: string) => {
+    setExpandedWorktreeGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(worktreePath)) next.delete(worktreePath);
+      else next.add(worktreePath);
       return next;
     });
   }, []);
@@ -1190,12 +1235,8 @@ export function HistorySection({
                 const limit =
                   groupLimits.get(group.projectPath) ??
                   HISTORY_GROUP_DEFAULT_LIMIT;
-                const displayRoots = collectVisibleHistoryRoots(
-                  group.projectTree?.roots ?? [],
-                  limit,
-                );
-                const hiddenCount =
-                  (group.projectTree?.roots.length ?? 0) - displayRoots.length;
+                const { sections, hiddenCount } =
+                  buildLimitedVisibleHistoryGroupSections(group, limit);
                 return (
                   <div key={group.projectPath} className="mb-0.5 last:mb-0">
                     <button
@@ -1245,69 +1286,48 @@ export function HistorySection({
                     </button>
                     {!isCollapsed && (
                       <>
-                        {group.projectTree &&
-                          displayRoots.map((root) => (
-                            <HistoryTreeRow
-                              key={root.sessionId}
-                              node={root}
-                              depth={0}
-                              expandedNodes={expandedNodes}
-                              isPinned={pinned.has(root.sessionId)}
-                              childCountLabel={childCountLabel}
-                              onToggleExpand={toggleNode}
-                              onOpen={onOpen}
-                              onHide={hideSession}
-                              onPin={pinSession}
-                              onUnpin={unpinSession}
-                              t={t}
-                            />
-                          ))}
-                        {group.worktrees.map((worktree) => (
-                          <div
-                            key={worktree.worktreePath}
-                            className="mb-0.5 last:mb-0"
-                          >
-                            <div
-                              className="mx-2 flex min-h-[28px] items-center gap-1.5 rounded-md px-3 py-0"
-                              style={{ paddingLeft: "30px" }}
-                              title={worktree.worktreePath}
-                            >
-                              <span
-                                className="truncate flex-1 min-w-0"
-                                style={{
-                                  fontSize: "var(--text-sm)",
-                                  fontWeight: "var(--weight-regular)",
-                                  color: "var(--text-secondary)",
-                                  lineHeight: "var(--leading-snug)",
-                                }}
-                              >
-                                {worktree.worktreeLabel}
-                              </span>
-                              <span
-                                className="tc-caption tabular-nums"
-                                style={{ color: "var(--text-muted)" }}
-                              >
-                                {worktree.tree.sessionCount}
-                              </span>
-                            </div>
-                            {worktree.tree.roots.map((root) => (
-                              <HistoryTreeRow
-                                key={root.sessionId}
-                                node={root}
-                                depth={0}
-                                expandedNodes={expandedNodes}
-                                isPinned={pinned.has(root.sessionId)}
-                                childCountLabel={childCountLabel}
-                                onToggleExpand={toggleNode}
-                                onOpen={onOpen}
-                                onHide={hideSession}
-                                onPin={pinSession}
-                                onUnpin={unpinSession}
-                                t={t}
-                              />
-                            ))}
-                          </div>
-                        ))}
+                        {sections.map((section) =>
+                          section.kind === "project"
+                            ? section.visibleRoots.map((root) => (
+                                <HistoryTreeRow
+                                  key={root.sessionId}
+                                  node={root}
+                                  depth={0}
+                                  expandedNodes={expandedNodes}
+                                  isPinned={pinned.has(root.sessionId)}
+                                  childCountLabel={childCountLabel}
+                                  onToggleExpand={toggleNode}
+                                  onOpen={onOpen}
+                                  onHide={hideSession}
+                                  onPin={pinSession}
+                                  onUnpin={unpinSession}
+                                  t={t}
+                                />
+                              ))
+                            : (
+                                <WorktreeHistoryGroup
+                                  key={section.worktree.worktreePath}
+                                  worktree={section.worktree}
+                                  expanded={expandedWorktreeGroups.has(
+                                    section.worktree.worktreePath,
+                                  )}
+                                  onToggle={() =>
+                                    toggleWorktreeGroup(
+                                      section.worktree.worktreePath,
+                                    )
+                                  }
+                                  expandedNodes={expandedNodes}
+                                  pinned={pinned}
+                                  childCountLabel={childCountLabel}
+                                  onOpen={onOpen}
+                                  onHide={hideSession}
+                                  onPin={pinSession}
+                                  onUnpin={unpinSession}
+                                  onToggleExpand={toggleNode}
+                                  t={t}
+                                />
+                              ),
+                        )}
                         {hiddenCount > 0 && (
                           <button
                             type="button"
@@ -1572,6 +1592,100 @@ function filterProjectTree(
   return filterHiddenProjectTree(tree, hidden);
 }
 
+function WorktreeHistoryGroup({
+  worktree,
+  expanded,
+  onToggle,
+  expandedNodes,
+  pinned,
+  childCountLabel,
+  onOpen,
+  onHide,
+  onPin,
+  onUnpin,
+  onToggleExpand,
+  t,
+}: {
+  worktree: NonNullable<SessionHistoryProjectGroup["worktrees"]>[number];
+  expanded: boolean;
+  onToggle: () => void;
+  expandedNodes: ReadonlySet<string>;
+  pinned: ReadonlySet<string>;
+  childCountLabel: (count: number) => string;
+  onOpen: (filePath: string) => void;
+  onHide: (sessionId: string) => void;
+  onPin: (sessionId: string) => void;
+  onUnpin: (sessionId: string) => void;
+  onToggleExpand: (sessionId: string) => void;
+  t: ReturnType<typeof useT>;
+}) {
+  const countLabel = childCountLabel(worktree.tree.sessionCount);
+
+  return (
+    <div className="mb-0.5 last:mb-0">
+      <button
+        type="button"
+        className="tc-row-hover group/grp mx-2 flex min-h-[44px] w-full items-center gap-1.5 rounded-md pr-2 py-1.5 text-left cursor-pointer"
+        style={{ paddingLeft: "16px" }}
+        onClick={onToggle}
+        title={worktree.worktreePath}
+      >
+        <span className="shrink-0 flex h-4 w-4 items-center justify-center text-[var(--text-muted)]">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            className="shrink-0"
+            style={{
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition:
+                "transform var(--duration-quick) var(--ease-out-soft)",
+            }}
+          >
+            <path d="M3 2l4 3-4 3z" fill="currentColor" />
+          </svg>
+        </span>
+        <span className="shrink-0 flex h-4 w-4 items-center justify-center text-[var(--text-muted)]">
+          <BranchIcon />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate"
+            style={{
+              fontSize: "var(--text-sm)",
+              fontWeight: "var(--weight-regular)",
+              color: "var(--text-primary)",
+              lineHeight: "var(--leading-snug)",
+            }}
+          >
+            {worktree.worktreeLabel}
+          </span>
+          <span className="mt-0.5 block tc-timestamp">
+            {formatHistoryTime(worktree.tree.latestActivityAt)} · {countLabel}
+          </span>
+        </span>
+      </button>
+      {expanded &&
+        worktree.tree.roots.map((root) => (
+          <HistoryTreeRow
+            key={root.sessionId}
+            node={root}
+            depth={0}
+            expandedNodes={expandedNodes}
+            isPinned={pinned.has(root.sessionId)}
+            childCountLabel={childCountLabel}
+            onToggleExpand={onToggleExpand}
+            onOpen={onOpen}
+            onHide={onHide}
+            onPin={onPin}
+            onUnpin={onUnpin}
+            t={t}
+          />
+        ))}
+    </div>
+  );
+}
+
 function filterHistoryNode(
   node: SessionHistoryNode,
   hidden: ReadonlySet<string>,
@@ -1676,7 +1790,9 @@ export function SessionsPanel({
     () =>
       projects.map((project) => ({
         projectPath: project.path,
-        worktreePaths: project.worktrees.map((worktree) => worktree.path),
+        worktreePaths: project.worktrees
+          .filter((worktree) => worktree.path !== project.path)
+          .map((worktree) => worktree.path),
       })),
     [projects],
   );
