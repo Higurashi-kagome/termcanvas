@@ -14,6 +14,10 @@ import {
   isGitRepo,
 } from "../electron/git-info.ts";
 
+function normalizePathForAssert(value: string | null | undefined): string | null {
+  return value ? value.replace(/\\/g, "/") : null;
+}
+
 async function withTempRepo(
   fn: (repoPath: string, remotePath: string, nonRepoPath: string) => Promise<void> | void,
 ) {
@@ -111,6 +115,41 @@ test("git info lists branches, topo log, commit detail, and supports checkout", 
 
     assert.ok(switchedCurrent);
     assert.equal(switchedCurrent.isCurrent, true);
+  });
+});
+
+test("getGitBranches reports when a local branch is already attached to another worktree", async () => {
+  await withTempRepo(async (repoPath) => {
+    fs.writeFileSync(path.join(repoPath, "README.md"), "root\n");
+    execSync("git add README.md", { cwd: repoPath, stdio: "pipe" });
+    execSync('git commit -m "root commit"', { cwd: repoPath, stdio: "pipe" });
+
+    execSync("git branch feat/other-worktree", {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    const linkedWorktreePath = path.join(path.dirname(repoPath), "linked");
+    execSync(`git worktree add "${linkedWorktreePath}" feat/other-worktree`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const branches = await getGitBranches(repoPath);
+    const currentBranch = branches.find((branch) => branch.name === "main");
+    const linkedBranch = branches.find(
+      (branch) => branch.name === "feat/other-worktree",
+    );
+
+    assert.ok(currentBranch);
+    assert.equal(
+      normalizePathForAssert(currentBranch.worktreePath),
+      normalizePathForAssert(repoPath),
+    );
+    assert.ok(linkedBranch);
+    assert.equal(
+      normalizePathForAssert(linkedBranch.worktreePath),
+      normalizePathForAssert(linkedWorktreePath),
+    );
   });
 });
 

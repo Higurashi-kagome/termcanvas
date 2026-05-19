@@ -28,6 +28,7 @@ test("summarizeBranchInventory prioritizes the current local branch and counts b
       upstream: "origin/feature/refactor",
       ahead: 0,
       behind: 0,
+      worktreePath: "/repo/.worktrees/feature-refactor",
     },
     {
       name: "origin/feature/refactor",
@@ -37,6 +38,7 @@ test("summarizeBranchInventory prioritizes the current local branch and counts b
       upstream: null,
       ahead: 0,
       behind: 0,
+      worktreePath: null,
     },
     {
       name: "main",
@@ -46,6 +48,7 @@ test("summarizeBranchInventory prioritizes the current local branch and counts b
       upstream: "origin/main",
       ahead: 2,
       behind: 1,
+      worktreePath: "/repo",
     },
     {
       name: "origin/main",
@@ -55,6 +58,7 @@ test("summarizeBranchInventory prioritizes the current local branch and counts b
       upstream: null,
       ahead: 0,
       behind: 0,
+      worktreePath: null,
     },
   ]);
 
@@ -63,8 +67,48 @@ test("summarizeBranchInventory prioritizes the current local branch and counts b
     remoteBranchCount: 2,
     currentBranchName: "main",
     trackingName: "origin/main",
+    orderedLocalBranches: [
+      { name: "main", worktreePath: "/repo" },
+      {
+        name: "feature/refactor",
+        worktreePath: "/repo/.worktrees/feature-refactor",
+      },
+    ],
     orderedLocalBranchNames: ["main", "feature/refactor"],
   });
+});
+
+test("summarizeBranchInventory preserves worktree occupancy for local branches", () => {
+  const summary = summarizeBranchInventory([
+    {
+      name: "main",
+      hash: "aaa1111",
+      isCurrent: true,
+      isRemote: false,
+      upstream: "origin/main",
+      ahead: 0,
+      behind: 0,
+      worktreePath: "/repo",
+    },
+    {
+      name: "feat/other-worktree",
+      hash: "bbb2222",
+      isCurrent: false,
+      isRemote: false,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      worktreePath: "/repo/.worktrees/feat-other-worktree",
+    },
+  ]);
+
+  assert.deepEqual(summary.orderedLocalBranches, [
+    { name: "main", worktreePath: "/repo" },
+    {
+      name: "feat/other-worktree",
+      worktreePath: "/repo/.worktrees/feat-other-worktree",
+    },
+  ]);
 });
 
 test("summarizeCommitRefs sorts by priority and limits visible refs", () => {

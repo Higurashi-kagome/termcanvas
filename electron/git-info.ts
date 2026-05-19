@@ -26,6 +26,7 @@ export interface GitBranchInfo {
   upstream: string | null;
   ahead: number;
   behind: number;
+  worktreePath: string | null;
 }
 
 export interface GitLogEntry {
@@ -164,7 +165,7 @@ export async function isGitRepo(dirPath: string): Promise<boolean> {
 export async function getGitBranches(worktreePath: string): Promise<GitBranchInfo[]> {
   const raw = await execGitText(worktreePath, [
     "for-each-ref",
-    "--format=%(refname)%09%(refname:short)%09%(objectname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)",
+    "--format=%(refname)%09%(refname:short)%09%(objectname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%09%(worktreepath)",
     "refs/heads",
     "refs/remotes",
   ]);
@@ -174,7 +175,15 @@ export async function getGitBranches(worktreePath: string): Promise<GitBranchInf
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      const [refName, shortName, hash, headMarker, upstreamRaw, trackingRaw] = line.split("\t");
+      const [
+        refName,
+        shortName,
+        hash,
+        headMarker,
+        upstreamRaw,
+        trackingRaw,
+        worktreePathRaw,
+      ] = line.split("\t");
       const { ahead, behind } = parseTracking(trackingRaw ?? "");
       return {
         name: shortName,
@@ -184,6 +193,7 @@ export async function getGitBranches(worktreePath: string): Promise<GitBranchInf
         upstream: upstreamRaw || null,
         ahead,
         behind,
+        worktreePath: worktreePathRaw || null,
       };
     })
     .filter((branch) => !branch.name.endsWith("/HEAD"));
@@ -207,6 +217,7 @@ export async function getGitBranches(worktreePath: string): Promise<GitBranchInf
         upstream: null,
         ahead: 0,
         behind: 0,
+        worktreePath,
       });
     }
   } catch {

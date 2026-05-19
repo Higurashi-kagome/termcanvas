@@ -382,6 +382,7 @@ export interface GitBranchInfo {
   upstream: string | null;
   ahead: number;
   behind: number;
+  worktreePath: string | null;
 }
 
 export interface GitLogEntry {
