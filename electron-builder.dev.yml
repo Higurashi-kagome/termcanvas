@@ -1,0 +1,63 @@
+appId: com.blueberrycongee.termcanvas.dev
+productName: TermCanvas Dev
+copyright: Copyright © 2026 blueberrycongee
+
+directories:
+  output: out-dev
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+
+extraResources:
+  - from: build/app-flavor-dev.json
+    to: app-flavor.json
+  - from: dist-cli
+    to: cli
+    filter:
+      - "**/*"
+  - from: skills
+    to: skills
+    filter:
+      - "**/*"
+  - from: dist-computer-use
+    to: .
+    filter:
+      - "**/*"
+
+asarUnpack:
+  - node_modules/node-pty/**/*
+
+mac:
+  identity: "-"
+  signIgnore:
+    - ".*\\/computer-use-helper$"
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+linux:
+  category: Development
+  icon: build/icon.png
+  target:
+    - AppImage
+    - deb
+
+win:
+  icon: build/icon.ico
+  artifactName: "${productName}-Setup-${version}.${ext}"
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

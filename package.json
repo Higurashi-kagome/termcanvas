@@ -12,6 +12,10 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/build-computer-use.mjs && tsc && vite build",
+    "package": "pnpm exec electron-builder --publish never",
+    "package:dev": "pnpm exec electron-builder --config electron-builder.dev.yml --config.npmRebuild=false --publish never",
+    "dist": "pnpm build && pnpm run package",
+    "dist:dev": "pnpm build && pnpm run package:dev",
     "preview": "vite preview",
     "generate:icons": "python3 scripts/generate-icons.py",
     "pet:preview": "tsx scripts/pet-preview.ts > /tmp/pet-preview.html && echo 'Open /tmp/pet-preview.html in a browser'",

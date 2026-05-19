@@ -4,6 +4,7 @@ dist-electron/
 dist-cli/
 dist-computer-use/
 out/
+out-dev/
 .claw/
 .vite/
 native/computer-use-helper/.build/
@@ -32,6 +33,7 @@ CLAUDE.md
 
 # Internal implementation plans
 docs/plans/
+docs/superpowers/
 
 # Playwright MCP artifacts
 .playwright-mcp/

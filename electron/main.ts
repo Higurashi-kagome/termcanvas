@@ -53,6 +53,7 @@ import {
   enableHydraForProject,
 } from "./hydra-project.ts";
 import { buildLaunchSpec } from "./pty-launch.js";
+import { getAppDataDirName, readPackagedAppFlavor } from "./app-flavor";
 import {
   createDefaultComposerSubmitDeps,
   submitComposerRequest,
@@ -183,17 +184,23 @@ const __dirname = path.dirname(__filename);
 
 installBrokenPipeGuards([process.stdout, process.stderr]);
 
-const isDev = !!process.env.VITE_DEV_SERVER_URL;
-if (isDev) {
-  app.setPath("userData", path.join(app.getPath("appData"), "termcanvas-dev"));
-}
+const isDevServer = !!process.env.VITE_DEV_SERVER_URL;
+const packagedFlavor = readPackagedAppFlavor(process.resourcesPath);
+const isDev = isDevServer;
+app.setPath(
+  "userData",
+  path.join(
+    app.getPath("appData"),
+    getAppDataDirName(app.getName(), isDevServer, packagedFlavor),
+  ),
+);
 
 // Capture main / renderer / GPU process crashes into local minidumps. Required
 // before any window opens so main-process crashes are still recorded. We do
 // not upload anywhere — dumps live under app.getPath('crashDumps') for users
 // (or us) to attach to bug reports manually.
 crashReporter.start({
-  productName: "TermCanvas",
+  productName: app.getName(),
   uploadToServer: false,
   compress: true,
 });

@@ -4,11 +4,16 @@ import fs from "fs";
 import path from "path";
 import { sendToWindow } from "./window-events";
 import { MacCustomUpdater } from "./mac-updater";
+import { isDevInstall, readPackagedAppFlavor } from "./app-flavor";
 import type { UpdateCheckOutcome } from "../shared/updater-types";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const IS_MAC = process.platform === "darwin";
-const IS_DEV = !!process.env.VITE_DEV_SERVER_URL;
+const IS_DEV = isDevInstall(
+  app.getName(),
+  !!process.env.VITE_DEV_SERVER_URL,
+  readPackagedAppFlavor(process.resourcesPath),
+);
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
 let macUpdater: MacCustomUpdater | null = null;
