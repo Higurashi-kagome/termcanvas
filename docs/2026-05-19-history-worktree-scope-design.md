@@ -52,13 +52,13 @@
 
 - `termcanvas`
 
-- `termcanvas / feat-auto-focus`
+- `feat-auto-focus`
 
-- `termcanvas / fix-history-panel`
+- `fix-history-panel`
 
 这些 worktree 子组只承载`session.projectDir === worktree.path`的会话，不承载后代目录会话。
 
-如果某个 worktree 当前没有命中任何历史会话，则不显示空子组。
+如果某个 worktree 当前没有命中任何历史会话，则不显示该 worktree。
 
 #### 作用域规则
 
@@ -94,7 +94,7 @@
 
 worktree 会话不混入项目根目录列表，而是进入对应的 worktree 子组。
 
-每个 worktree 子组的标题建议使用“父项目名 / worktree 名”的可读形式，例如`termcanvas / feat-auto-focus`。其中 worktree 名默认取`worktree.path`的最后一个路径段，而不是完整绝对路径。
+每个 worktree 子组的标题建议直接使用 worktree 名称，与当前会话面板保持一致，例如`feat-auto-focus`。该名称默认取`worktree.path`的最后一个路径段，而不是完整绝对路径。
 
 worktree 子组内部的会话排序继续沿用当前历史列表的时间倒序规则。
 
@@ -128,7 +128,7 @@ interface SessionHistoryCanvasProjectGroup {
 
 - `projectTree`承载项目根目录会话；如果项目根目录没有会话，则允许为`null`
 
-- `worktrees`只包含命中历史会话的 worktree 组
+- `worktrees`只包含命中历史会话的 worktree 组，不返回空 worktree
 
 - `tree`继续复用现有`SessionHistoryProjectTree`结构，避免重写组内树逻辑
 
@@ -161,7 +161,9 @@ interface HistoryScopeProjectInput {
 
 6. 对命中某个 worktree 目录的会话分别构建对应 worktree 子组的`tree`
 
-7. 将根目录 tree 与 worktree trees 重新组合成父项目分组结果返回给前端
+7. 过滤掉没有任何会话的 worktree
+
+8. 将根目录 tree 与 worktree trees 重新组合成父项目分组结果返回给前端
 
 这样做的好处是：
 
@@ -196,6 +198,8 @@ interface HistoryScopeProjectInput {
 - 改为传入“每个父项目及其 worktree 列表”的作用域描述
 
 - 历史面板收到主进程返回的父项目分组结果后，按“根目录会话 + worktree 子组”的顺序渲染
+
+- worktree 子组标题直接复用 worktree 名称，不再额外拼接父项目名
 
 #### 去重与一致性
 
@@ -261,7 +265,7 @@ interface HistoryScopeProjectInput {
 
 - worktree 会话不会同时出现在项目根目录列表中
 
-- 没有会话的 worktree 不显示空子组
+- 没有会话的 worktree 不显示
 
 - 不命中`projectPath`或`worktreePath`的会话不会被历史面板收进来
 
@@ -305,8 +309,12 @@ interface HistoryScopeProjectInput {
 
 3. worktree 会话在父项目下显示为独立子组，而不是混入根目录列表
 
-4. 不扫描`worktree.path`后代目录
+4. worktree 子组标题与当前会话面板一致，直接显示 worktree 名称
 
-5. 不因本次改动破坏现有 confirmed 会话树关系展示
+5. 没有会话记录的 worktree 不显示
 
-6. 历史面板与当前会话面板在“项目包含 worktree”这一层语义上保持一致
+6. 不扫描`worktree.path`后代目录
+
+7. 不因本次改动破坏现有 confirmed 会话树关系展示
+
+8. 历史面板与当前会话面板在“项目包含 worktree”这一层语义上保持一致
