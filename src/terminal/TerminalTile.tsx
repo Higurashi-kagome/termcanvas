@@ -552,6 +552,11 @@ export function TerminalTile({
 
   const handleTerminalBodyAreaClick = useCallback(() => {
     const adapter = getComposerAdapter(terminal.type);
+    if (!isOverviewMode) {
+      activateTerminalInScene(projectId, worktreeId, terminal.id, {
+        focusInput: false,
+      });
+    }
     handleTerminalBodyClick({
       composerEnabled,
       focusComposer: () => {
@@ -573,9 +578,11 @@ export function TerminalTile({
     focusTerminalInOverview,
     isOverviewMode,
     panToTerminalOnBodyClickEnabled,
+    projectId,
     scheduleXtermFocus,
     terminal.id,
     terminal.type,
+    worktreeId,
   ]);
 
   useEffect(() => {

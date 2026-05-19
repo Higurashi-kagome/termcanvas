@@ -593,9 +593,13 @@ a.tc-kbd:active {
    ───────────────────────────────────────────────────────────── */
 .terminal-tile {
   cursor: default;
+  outline: 1px solid transparent;
+  outline-offset: 0;
   transition:
     border-color var(--duration-quick) var(--ease-out-soft),
-    box-shadow var(--duration-quick) var(--ease-out-soft);
+    box-shadow var(--duration-quick) var(--ease-out-soft),
+    outline-color var(--duration-quick) var(--ease-out-soft),
+    outline-width var(--duration-quick) var(--ease-out-soft);
 }
 
 .terminal-tile[data-drag-over="true"],
@@ -642,9 +646,7 @@ a.tc-kbd:active {
     [data-overview="true"]
   ) {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 9%, transparent);
+  outline-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* Focus, overview mode: a stronger ring still readable when the
@@ -654,9 +656,8 @@ a.tc-kbd:active {
     [data-task-flash="true"],
     [data-receptive="true"]
   ) {
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--text-secondary) 45%, transparent),
-    inset 0 2px 0 0 color-mix(in srgb, var(--text-secondary) 25%, transparent);
+  outline-width: 2px;
+  outline-color: color-mix(in srgb, var(--text-secondary) 45%, transparent);
 }
 
 /* Header. Lifts to --surface-hover when the tile owns focus — a
