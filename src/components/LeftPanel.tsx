@@ -165,8 +165,14 @@ export function LeftPanel() {
   // Scope for the history section — every absolute worktree path on
   // the canvas. Used to filter historical sessions to the current
   // workspace.
-  const canvasProjectDirs = useMemo(
-    () => projects.flatMap((p) => p.worktrees.map((w) => w.path)),
+  const historyScopeProjects = useMemo(
+    () =>
+      projects.map((project) => ({
+        projectPath: project.path,
+        worktreePaths: project.worktrees
+          .filter((worktree) => worktree.path !== project.path)
+          .map((worktree) => worktree.path),
+      })),
     [projects],
   );
 
@@ -430,7 +436,7 @@ export function LeftPanel() {
                 </>
               ) : (
                 <HistorySection
-                  projectDirs={canvasProjectDirs}
+                  scopeProjects={historyScopeProjects}
                   onOpen={handleOpenReplay}
                   t={t}
                   showHeader={false}

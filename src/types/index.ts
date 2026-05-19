@@ -838,6 +838,9 @@ export interface TermCanvasAPI {
     listSessionTrees: (
       projectDirs: string[],
     ) => Promise<import("../../shared/sessions").SessionHistoryProjectTree[]>;
+    listSessionGroups: (
+      scopeProjects: import("../../shared/sessions").SessionHistoryScopeProject[],
+    ) => Promise<import("../../shared/sessions").SessionHistoryProjectGroup[]>;
   };
   state: {
     load: () => Promise<PersistedCanvasState | null>;
