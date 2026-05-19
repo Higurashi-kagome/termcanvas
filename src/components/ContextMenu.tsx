@@ -124,7 +124,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
               item.active
                 ? "text-[var(--accent)] bg-[var(--accent)]/10"
                 : item.danger
-                  ? "text-[var(--red)] hover:text-[var(--red-soft)] hover:bg-[var(--border)]"
+                  ? "text-[var(--red)] hover:text-[var(--red)] hover:bg-[var(--red-soft)] focus-visible:text-[var(--red)] focus-visible:bg-[var(--red-soft)]"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]"
             }`}
             style={{ fontFamily: '"Geist Mono", monospace' }}
