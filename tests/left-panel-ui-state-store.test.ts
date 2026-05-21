@@ -194,6 +194,41 @@ test("prunes state for paths that no longer exist", async () => {
   });
 });
 
+test("keeps persisted expansion state when prune runs before projects restore", async () => {
+  const persisted = {
+    version: 1,
+    sessions: {
+      projectCollapsedByPath: { "/repo": true },
+      worktreeCollapsedByPath: { "/repo/.worktrees/a": true },
+    },
+    history: {
+      projectCollapsedByPath: { "/repo": true },
+    },
+  };
+  const { data } = installLocalStorage({
+    "termcanvas:left-panel-ui-state:v1": JSON.stringify(persisted),
+  });
+  const {
+    LEFT_PANEL_UI_STATE_STORAGE_KEY,
+    useLeftPanelUiStateStore,
+  } = await loadFreshStore();
+
+  const store = useLeftPanelUiStateStore.getState();
+  store.prune({
+    sessionProjectPaths: [],
+    sessionWorktreePaths: [],
+    historyProjectPaths: [],
+  });
+
+  assert.equal(store.isSessionProjectCollapsed("/repo"), true);
+  assert.equal(store.isSessionWorktreeCollapsed("/repo/.worktrees/a"), true);
+  assert.equal(store.isHistoryProjectCollapsed("/repo"), true);
+  assert.deepEqual(
+    JSON.parse(data.get(LEFT_PANEL_UI_STATE_STORAGE_KEY) ?? "{}"),
+    persisted,
+  );
+});
+
 test("uses paths rather than runtime ids for session collapse state", async () => {
   installLocalStorage();
   const { useLeftPanelUiStateStore } = await loadFreshStore();

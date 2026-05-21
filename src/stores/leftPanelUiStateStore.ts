@@ -212,6 +212,14 @@ export const useLeftPanelUiStateStore = create<LeftPanelUiStateStore>(
       sessionWorktreePaths,
       historyProjectPaths,
     }) => {
+      if (
+        sessionProjectPaths.length === 0 &&
+        sessionWorktreePaths.length === 0 &&
+        historyProjectPaths.length === 0
+      ) {
+        return;
+      }
+
       set((state) => {
         const next: LeftPanelUiStateData = {
           version: 1,

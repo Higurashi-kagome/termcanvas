@@ -56,3 +56,4 @@ docs/research/harness-articles-2026/
 /.agents/skills/*/
 !/.agents/skills/termcanvas
 /skills-lock.json
+.ace-tool/
