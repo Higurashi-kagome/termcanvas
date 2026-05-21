@@ -42,7 +42,13 @@ import {
 } from "./session-history-tree.ts";
 import { findCodexJsonlFiles, findKimiSessionFiles } from "./usage-collector.ts";
 import { stripSyntheticUserBlocks } from "./session-scanner.ts";
-import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
+import type {
+  SessionHistoryProjectGroup,
+  SessionHistoryProjectTree,
+  SessionHistoryScopeProject,
+  SessionHistoryWorktreeGroup,
+} from "../shared/sessions.ts";
+import { normalizeProjectPathForMatch } from "../shared/project-path-match.ts";
 
 export interface SessionSearchEntry {
   sessionId: string;
@@ -87,26 +93,6 @@ const HEAD_LINES_FOR_PROMPT = 50;
 const MAX_FILE_SIZE_FOR_INDEX = 20 * 1024 * 1024;
 const AVG_LINE_BYTES_ESTIMATE = 500;
 const FIRST_PROMPT_MAX_LENGTH = 200;
-
-/**
- * Normalize a project path for set membership checks in the session index.
- *
- * The history panel passes canvas worktree paths exactly as stored in app
- * state, while Codex/Kimi session files report their cwd exactly as emitted by
- * the CLI. On Windows these two sources often differ only by slash style
- * (`E:/repo/app` vs `E:\repo\app`) and sometimes by drive-letter casing. We
- * normalize both sides before comparison so the same project does not get
- * filtered out due to formatting-only path differences.
- */
-function normalizeProjectPathForMatch(projectDir: string): string {
-  const trimmed = projectDir.trim();
-  if (!trimmed) return "";
-
-  const normalized = path.normalize(trimmed);
-  return process.platform === "win32"
-    ? normalized.toLowerCase()
-    : normalized;
-}
 
 function decodeClaudeEncodedPath(encoded: string): string {
   // Claude stores projects under `-Users-foo-bar`; decode back to
@@ -612,20 +598,30 @@ export async function listSessionTreesForProjects(
   if (projectDirs.length === 0) return [];
 
   const flatEntries = await listSessionsForProjects(projectDirs);
-  const treeInputs: HistoryTreeInputEntry[] = flatEntries.map((entry) => ({
-    sessionId: entry.sessionId,
-    provider: entry.provider,
-    projectDir: entry.projectDir,
-    filePath: entry.filePath,
-    firstPrompt: entry.firstPrompt,
-    startedAt: entry.startedAt,
-    lastActivityAt: entry.lastActivityAt,
-    estimatedMessageCount: entry.estimatedMessageCount,
-    fileSize: entry.fileSize,
-    confirmedParentSessionId: entry.confirmedParentSessionId,
-  }));
+  const treeInputs: HistoryTreeInputEntry[] = flatEntries.map(mapEntryToTreeInput);
 
   return buildHistoryProjectTrees(treeInputs);
+}
+
+export async function listSessionGroupsForScope(
+  scopeProjects: SessionHistoryScopeProject[],
+): Promise<SessionHistoryProjectGroup[]> {
+  if (scopeProjects.length === 0) return [];
+
+  const allProjectDirs = [
+    ...new Set(
+      scopeProjects.flatMap((scope) => [
+        scope.projectPath,
+        ...scope.worktreePaths,
+      ]),
+    ),
+  ];
+  const entries = await listSessionsForProjects(allProjectDirs);
+
+  return scopeProjects
+    .map((scope) => buildScopedHistoryGroup(scope, entries))
+    .filter((group): group is SessionHistoryProjectGroup => group !== null)
+    .sort((a, b) => b.latestActivityAt.localeCompare(a.latestActivityAt));
 }
 
 /**
@@ -700,6 +696,92 @@ export function invalidateSessionIndexForFile(filePath: string): void {
 
 export function clearSessionIndexCache(): void {
   fileCache.clear();
+}
+
+function mapEntryToTreeInput(entry: SessionSearchEntry): HistoryTreeInputEntry {
+  return {
+    sessionId: entry.sessionId,
+    provider: entry.provider,
+    projectDir: entry.projectDir,
+    filePath: entry.filePath,
+    firstPrompt: entry.firstPrompt,
+    startedAt: entry.startedAt,
+    lastActivityAt: entry.lastActivityAt,
+    estimatedMessageCount: entry.estimatedMessageCount,
+    fileSize: entry.fileSize,
+    confirmedParentSessionId: entry.confirmedParentSessionId,
+  };
+}
+
+function buildScopedHistoryGroup(
+  scope: SessionHistoryScopeProject,
+  entries: SessionSearchEntry[],
+): SessionHistoryProjectGroup | null {
+  const projectPathKey = normalizeProjectPathForMatch(scope.projectPath);
+  const projectEntries = entries.filter(
+    (entry) => normalizeProjectPathForMatch(entry.projectDir) === projectPathKey,
+  );
+
+  const uniqueWorktreePaths = [
+    ...new Map(
+      scope.worktreePaths
+        .map((worktreePath) => [
+          normalizeProjectPathForMatch(worktreePath),
+          worktreePath,
+        ] as const)
+        .filter(([worktreePathKey]) => worktreePathKey && worktreePathKey !== projectPathKey),
+    ).values(),
+  ];
+
+  const worktrees = uniqueWorktreePaths
+    .map((worktreePath) => {
+      const worktreePathKey = normalizeProjectPathForMatch(worktreePath);
+      const worktreeEntries = entries.filter(
+        (entry) =>
+          normalizeProjectPathForMatch(entry.projectDir) === worktreePathKey,
+      );
+      if (worktreeEntries.length === 0) return null;
+
+      const tree = buildHistoryProjectTrees(
+        worktreeEntries.map(mapEntryToTreeInput),
+      )[0];
+      if (!tree) return null;
+
+      return {
+        worktreePath,
+        worktreeLabel: path.basename(worktreePath),
+        tree,
+      };
+    })
+    .filter((group): group is SessionHistoryWorktreeGroup => group !== null);
+
+  const projectTree =
+    projectEntries.length > 0
+      ? buildHistoryProjectTrees(projectEntries.map(mapEntryToTreeInput))[0] ?? null
+      : null;
+
+  if (!projectTree && worktrees.length === 0) return null;
+
+  return {
+    projectPath: scope.projectPath,
+    projectLabel: path.basename(scope.projectPath),
+    projectTree,
+    worktrees,
+    latestActivityAt: resolveLatestActivity(projectTree, worktrees),
+  };
+}
+
+function resolveLatestActivity(
+  projectTree: SessionHistoryProjectTree | null,
+  worktrees: SessionHistoryWorktreeGroup[],
+): string {
+  let latest = projectTree?.latestActivityAt ?? "";
+  for (const worktree of worktrees) {
+    if (!latest || worktree.tree.latestActivityAt > latest) {
+      latest = worktree.tree.latestActivityAt;
+    }
+  }
+  return latest;
 }
 
 /**

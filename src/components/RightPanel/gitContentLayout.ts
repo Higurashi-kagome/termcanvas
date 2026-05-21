@@ -17,6 +17,10 @@ export interface BranchInventorySummary {
   remoteBranchCount: number;
   currentBranchName: string | null;
   trackingName: string | null;
+  orderedLocalBranches: Array<{
+    name: string;
+    worktreePath: string | null;
+  }>;
   orderedLocalBranchNames: string[];
 }
 
@@ -183,6 +187,10 @@ export function summarizeBranchInventory(
     remoteBranchCount,
     currentBranchName: currentBranch?.name ?? null,
     trackingName: currentBranch?.upstream ?? null,
+    orderedLocalBranches: sortedLocalBranches.map((branch) => ({
+      name: branch.name,
+      worktreePath: branch.worktreePath,
+    })),
     orderedLocalBranchNames: sortedLocalBranches.map((branch) => branch.name),
   };
 }

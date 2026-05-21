@@ -35,6 +35,7 @@ import { useTerminalRuntimeStateStore } from "./terminalRuntimeStateStore.ts";
 import { usePinStore } from "./pinStore.ts";
 import { destroyTerminalRuntime } from "../terminal/terminalRuntimeStore.ts";
 import { resolveCollisions } from "../canvas/collisionResolver.ts";
+import { normalizePathForComparison } from "../../shared/path-comparison.ts";
 
 interface ProjectStore {
   projects: ProjectData[];
@@ -185,6 +186,14 @@ interface WorktreeTarget {
 }
 
 let idCounter = 0;
+
+function getWorktreePathComparisonPlatform() {
+  if (typeof window === "undefined") {
+    return "darwin";
+  }
+  return window.termcanvas?.app.platform ?? "darwin";
+}
+
 export function generateId(): string {
   return `${Date.now()}-${++idCounter}`;
 }
@@ -272,9 +281,21 @@ function syncProjectWorktrees(
   project: ProjectData,
   worktrees: ScannedWorktree[],
 ): ProjectData {
-  const existingByPath = new Map(project.worktrees.map((w) => [w.path, w]));
+  const existingByPath = new Map(
+    project.worktrees.map((worktree) => [
+      normalizePathForComparison(
+        worktree.path,
+        getWorktreePathComparisonPlatform(),
+      ),
+      worktree,
+    ]),
+  );
   const synced = worktrees.map((wt) => {
-    const existing = existingByPath.get(wt.path);
+    const normalizedPath = normalizePathForComparison(
+      wt.path,
+      getWorktreePathComparisonPlatform(),
+    );
+    const existing = existingByPath.get(normalizedPath);
     if (!existing) {
       return {
         id: generateId(),
@@ -294,8 +315,21 @@ function syncProjectWorktrees(
   // present. If the backend scan omitted it for any reason (transient git
   // error, path mismatch, race condition), preserve the existing entry so the
   // session panel never loses the main workspace.
-  if (!synced.some((w) => w.path === project.path)) {
-    const existingMain = existingByPath.get(project.path);
+  const normalizedProjectPath = normalizePathForComparison(
+    project.path,
+    getWorktreePathComparisonPlatform(),
+  );
+  if (
+    !synced.some(
+      (worktree) =>
+        normalizePathForComparison(
+          worktree.path,
+          getWorktreePathComparisonPlatform(),
+        ) ===
+        normalizedProjectPath,
+    )
+  ) {
+    const existingMain = existingByPath.get(normalizedProjectPath);
     if (existingMain) {
       synced.unshift(existingMain);
     }
@@ -585,8 +619,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   syncWorktrees: (projectPath, worktrees) => {
     const currentState = get();
+    const pathComparisonPlatform = getWorktreePathComparisonPlatform();
+    const normalizedProjectPath = normalizePathForComparison(
+      projectPath,
+      pathComparisonPlatform,
+    );
     const targetProject = currentState.projects.find(
-      (project) => project.path === projectPath,
+      (project) =>
+        normalizePathForComparison(
+          project.path,
+          pathComparisonPlatform,
+        ) === normalizedProjectPath,
     );
     if (!targetProject) {
       return;
@@ -600,11 +643,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     let removedTerminalIds: string[] = [];
     set((state) => {
       const updatedProjects = state.projects.map((project) => {
-        if (project.path !== projectPath) return project;
-        const nextPaths = new Set(worktrees.map((worktree) => worktree.path));
+        if (
+          normalizePathForComparison(
+            project.path,
+            pathComparisonPlatform,
+          ) !== normalizedProjectPath
+        ) {
+          return project;
+        }
+        const nextPaths = new Set(
+          nextProject.worktrees.map((worktree) =>
+            normalizePathForComparison(
+              worktree.path,
+              pathComparisonPlatform,
+            ),
+          ),
+        );
         removedTerminalIds.push(
           ...project.worktrees
-            .filter((worktree) => !nextPaths.has(worktree.path))
+            .filter(
+              (worktree) =>
+                !nextPaths.has(
+                  normalizePathForComparison(
+                    worktree.path,
+                    pathComparisonPlatform,
+                  ),
+                ),
+            )
             .flatMap((worktree) => collectWorktreeTerminalIds(worktree)),
         );
         return nextProject;

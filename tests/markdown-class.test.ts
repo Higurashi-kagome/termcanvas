@@ -40,3 +40,26 @@ test("plain markdown round-trips through sanitize", async () => {
   );
   assert.ok(html.includes("<code>code</code>"), "code should survive");
 });
+
+test("markdown class restores list markers after tailwind preflight reset", async () => {
+  const { markdownClassName } = await getMarkdownUtils();
+  assert.match(
+    markdownClassName,
+    /\[&_ul\]:list-disc/,
+    "unordered lists should restore disc markers",
+  );
+  assert.match(
+    markdownClassName,
+    /\[&_ol\]:list-decimal/,
+    "ordered lists should restore decimal markers",
+  );
+});
+
+test("markdown rendering preserves list structure for replay transcripts", async () => {
+  const { renderMarkdown } = await getMarkdownUtils();
+  const html = renderMarkdown(
+    "结果如下：\n\n1. 第一项\n2. 第二项\n\n- A\n- B",
+  );
+  assert.match(html, /<ol>\s*<li>第一项<\/li>\s*<li>第二项<\/li>\s*<\/ol>/);
+  assert.match(html, /<ul>\s*<li>A<\/li>\s*<li>B<\/li>\s*<\/ul>/);
+});

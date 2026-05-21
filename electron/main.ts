@@ -53,6 +53,7 @@ import {
   enableHydraForProject,
 } from "./hydra-project.ts";
 import { buildLaunchSpec } from "./pty-launch.js";
+import { getAppDataDirName, readPackagedAppFlavor } from "./app-flavor";
 import {
   createDefaultComposerSubmitDeps,
   submitComposerRequest,
@@ -78,6 +79,7 @@ import {
   onAuthStateChange,
   isLoggedIn,
 } from "./auth";
+import { installBrokenPipeGuards } from "./process-stream-guards";
 import { toFileUrl } from "./file-url";
 import {
   queryCloudUsage,
@@ -96,6 +98,7 @@ import { getProjectDiff } from "./git-diff";
 import { searchFileContents, searchSessionContents } from "./search-handlers";
 import {
   invalidateSessionIndexForFile,
+  listSessionGroupsForScope,
   listSessionTreesForProjects,
   listSessionsForProjects,
   listSessionsForProjectsPaged,
@@ -105,8 +108,12 @@ import {
   buildSessionHistoryScope,
   diffSessionHistoryScopes,
 } from "./session-history-events.ts";
-import type { SessionHistoryChangedEvent } from "../shared/sessions.ts";
-import type { SessionHistoryProjectTree } from "../shared/sessions.ts";
+import type {
+  SessionHistoryChangedEvent,
+  SessionHistoryProjectGroup,
+  SessionHistoryProjectTree,
+  SessionHistoryScopeProject,
+} from "../shared/sessions.ts";
 import {
   checkoutGitRef,
   createCommit,
@@ -151,6 +158,7 @@ import {
   unstageHunk,
   getBlame,
 } from "./git-info";
+import { parseNulSeparatedGitPaths } from "./git-paths";
 import { createMenu } from "./menu";
 import { isSelectAllShortcutInput } from "./select-all-shortcut";
 import { isReloadShortcutInput } from "./reload-shortcut";
@@ -179,17 +187,25 @@ import type { RenderDiagnosticEventInput } from "../shared/render-diagnostics";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = !!process.env.VITE_DEV_SERVER_URL;
-if (isDev) {
-  app.setPath("userData", path.join(app.getPath("appData"), "termcanvas-dev"));
-}
+installBrokenPipeGuards([process.stdout, process.stderr]);
+
+const isDevServer = !!process.env.VITE_DEV_SERVER_URL;
+const packagedFlavor = readPackagedAppFlavor(process.resourcesPath);
+const isDev = isDevServer;
+app.setPath(
+  "userData",
+  path.join(
+    app.getPath("appData"),
+    getAppDataDirName(app.getName(), isDevServer, packagedFlavor),
+  ),
+);
 
 // Capture main / renderer / GPU process crashes into local minidumps. Required
 // before any window opens so main-process crashes are still recorded. We do
 // not upload anywhere — dumps live under app.getPath('crashDumps') for users
 // (or us) to attach to bug reports manually.
 crashReporter.start({
-  productName: "TermCanvas",
+  productName: app.getName(),
   uploadToServer: false,
   compress: true,
 });
@@ -1284,6 +1300,21 @@ function setupIpc() {
   );
 
   ipcMain.handle(
+    "search:sessions:list-groups",
+    async (
+      _event,
+      scopeProjects: SessionHistoryScopeProject[],
+    ): Promise<SessionHistoryProjectGroup[]> => {
+      try {
+        return await listSessionGroupsForScope(scopeProjects ?? []);
+      } catch (err) {
+        console.error("[search:sessions:list-groups] failed", err);
+        return [];
+      }
+    },
+  );
+
+  ipcMain.handle(
     "session:watch",
     (_event, type: SessionType, sessionId: string, cwd: string) => {
       return sessionWatcher.watch(sessionId, type, cwd, () => {
@@ -1677,7 +1708,7 @@ function setupIpc() {
       trackedOutput = await new Promise<string>((resolve, reject) => {
         execFile(
           "git",
-          ["ls-files", "--cached", "--others", "--exclude-standard"],
+          ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
           { cwd: dirPath, timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
           (err, stdout) => (err ? reject(err) : resolve(stdout)),
         );
@@ -1718,22 +1749,43 @@ function setupIpc() {
 
     return {
       type: "git" as const,
-      paths: trackedOutput.split("\n").filter(Boolean),
+      paths: parseNulSeparatedGitPaths(trackedOutput),
     };
   });
 
   ipcMain.handle("fs:list-ignored-files", async (_event, dirPath: string) => {
     const { execFile } = await import("child_process");
-    try {
-      const stdout = await new Promise<string>((resolve, reject) => {
+    const runGit = (args: string[]) =>
+      new Promise<string>((resolve, reject) => {
         execFile(
           "git",
-          ["ls-files", "--others", "--ignored", "--exclude-standard"],
+          args,
           { cwd: dirPath, timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
           (err, out) => (err ? reject(err) : resolve(out)),
         );
       });
-      return stdout.split("\n").filter(Boolean);
+    try {
+      if (!(await isGitRepo(dirPath))) {
+        return [] as string[];
+      }
+
+      const [filesOutput, dirsOutput] = await Promise.all([
+        runGit(["ls-files", "-z", "--others", "--ignored", "--exclude-standard"]),
+        runGit([
+          "ls-files",
+          "-z",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory",
+        ]),
+      ]);
+      return [
+        ...new Set([
+          ...parseNulSeparatedGitPaths(dirsOutput),
+          ...parseNulSeparatedGitPaths(filesOutput),
+        ]),
+      ];
     } catch (err) {
       console.warn(`[fs:list-ignored-files] failed:`, err);
       return [] as string[];

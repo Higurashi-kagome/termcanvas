@@ -162,6 +162,7 @@ type XtermTerminalConstructor = new (
 type XtermRuntimeModule = typeof xtermModule & {
   default?: { Terminal?: XtermTerminalConstructor };
 };
+type TerminalHostPlatform = "darwin" | "win32" | "linux";
 
 const dictionaries = { en, zh } as const;
 const SPAWN_STAGGER_MS = 150;
@@ -182,6 +183,193 @@ const runtimeRegistry = new Map<string, ManagedTerminalRuntime>();
 const xtermRuntimeModule = xtermModule as XtermRuntimeModule;
 const XtermTerminalConstructor = (xtermRuntimeModule.Terminal ??
   xtermRuntimeModule.default?.Terminal) as XtermTerminalConstructor;
+
+export function getTerminalHostPlatform(): TerminalHostPlatform {
+  return window.termcanvas?.app.platform ?? "darwin";
+}
+
+export function isTerminalPasteShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+  >,
+  platform: TerminalHostPlatform,
+): boolean {
+  const key = event.key.toLowerCase();
+
+  if (platform === "win32") {
+    return (
+      (event.ctrlKey && !event.metaKey && !event.altKey && key === "v") ||
+      (event.ctrlKey && !event.metaKey && event.shiftKey && key === "v") ||
+      (!event.ctrlKey && !event.metaKey && event.shiftKey && key === "insert")
+    );
+  }
+
+  if (platform === "darwin") {
+    return event.metaKey && !event.ctrlKey && !event.altKey && key === "v";
+  }
+
+  return event.ctrlKey && !event.metaKey && event.shiftKey && key === "v";
+}
+
+export function isTerminalCopyShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+  >,
+  platform: TerminalHostPlatform,
+): boolean {
+  const key = event.key.toLowerCase();
+
+  if (platform === "win32") {
+    return (
+      (event.ctrlKey && !event.metaKey && !event.altKey && key === "c") ||
+      (event.ctrlKey && !event.metaKey && !event.altKey && key === "insert")
+    );
+  }
+
+  if (platform === "darwin") {
+    return event.metaKey && !event.ctrlKey && !event.altKey && key === "c";
+  }
+
+  return event.ctrlKey && !event.metaKey && event.shiftKey && key === "c";
+}
+
+export async function pasteTextFromClipboard(
+  xterm: Pick<XtermTerminal, "paste">,
+): Promise<boolean> {
+  try {
+    const text = await navigator.clipboard.readText();
+    xterm.paste(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function copyTerminalSelection(
+  runtime: Pick<ManagedTerminalRuntime, "attachOptions" | "meta">,
+  xterm: Pick<XtermTerminal, "getSelection">,
+): Promise<boolean> {
+  const text = xterm.getSelection();
+  if (!text) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    bumpCopiedNonce(runtime.meta.terminal.id);
+    runtime.attachOptions?.onCopy?.();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function installTerminalNativePasteGuard(
+  xterm: Pick<XtermTerminal, "element" | "textarea">,
+) {
+  let suppressNextPaste = false;
+  const guardNativePaste = (event: Event) => {
+    if (!suppressNextPaste) {
+      return;
+    }
+
+    suppressNextPaste = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  // On Windows, Ctrl+V can hit both our manual clipboard path and xterm's
+  // native paste listener on the helper textarea/host element. Swallow the
+  // very next DOM paste event after a handled shortcut so clipboard text only
+  // enters the PTY once.
+  xterm.textarea?.addEventListener("paste", guardNativePaste, true);
+  xterm.element?.addEventListener("paste", guardNativePaste, true);
+
+  return {
+    markManualPasteHandled() {
+      suppressNextPaste = true;
+    },
+    dispose() {
+      suppressNextPaste = false;
+      xterm.textarea?.removeEventListener("paste", guardNativePaste, true);
+      xterm.element?.removeEventListener("paste", guardNativePaste, true);
+    },
+  };
+}
+
+export function registerTerminalKeyHandler(
+  runtime: Pick<ManagedTerminalRuntime, "meta" | "ptyId">,
+  xterm: Pick<
+    XtermTerminal,
+    | "attachCustomKeyEventHandler"
+    | "element"
+    | "getSelection"
+    | "paste"
+    | "textarea"
+  >,
+) {
+  const nativePasteGuard = installTerminalNativePasteGuard(xterm);
+  xterm.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown") {
+      return true;
+    }
+
+    if (isRegisteredAppShortcutEvent(event)) {
+      return false;
+    }
+
+    const platform = getTerminalHostPlatform();
+
+    if (isTerminalPasteShortcut(event, platform)) {
+      nativePasteGuard.markManualPasteHandled();
+      void pasteTextFromClipboard(xterm).then((ok) => {
+        if (!ok) {
+          notify("warn", "Failed to paste clipboard text into the terminal.");
+        }
+      });
+      return false;
+    }
+
+    if (isTerminalCopyShortcut(event, platform)) {
+      const hasSelection = xterm.getSelection().length > 0;
+      if (hasSelection) {
+        void copyTerminalSelection(
+          runtime as Pick<ManagedTerminalRuntime, "attachOptions" | "meta">,
+          xterm,
+        ).then((ok) => {
+          if (!ok) {
+            notify("warn", "Failed to copy terminal selection.");
+          }
+        });
+        return false;
+      }
+
+      if (
+        (platform === "win32" || platform === "darwin") &&
+        event.key.toLowerCase() === "c"
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    if (event.metaKey) {
+      if (event.key === "Backspace" && runtime.ptyId !== null) {
+        window.termcanvas.terminal.input(runtime.ptyId, "\x15");
+      }
+      return false;
+    }
+
+    return true;
+  });
+
+  return () => {
+    nativePasteGuard.dispose();
+  };
+}
 
 function isSessionTelemetryProvider(
   type: TerminalType,
@@ -884,6 +1072,10 @@ function wireSelectionBindings(
   disposeSelectionBindings(runtime);
 
   const maybeAutoCopySelection = () => {
+    if (!usePreferencesStore.getState().terminalSelectionAutoCopyEnabled) {
+      return;
+    }
+
     const text = xterm.getSelection();
     if (
       !shouldAutoCopyTerminalSelection(
@@ -1181,20 +1373,10 @@ function createTerminalRenderer(
   );
   runtime.globalDisposers.push(registerModifierAwareLinkProvider(xterm, host));
 
-  xterm.attachCustomKeyEventHandler((event) => {
-    if (event.type === "keydown" && isRegisteredAppShortcutEvent(event)) {
-      return false;
-    }
-
-    if (event.type === "keydown" && event.metaKey) {
-      if (event.key === "Backspace" && runtime.ptyId !== null) {
-        window.termcanvas.terminal.input(runtime.ptyId, "\x15");
-      }
-      return false;
-    }
-
-    return true;
-  });
+  const removeTerminalKeyHandler = registerTerminalKeyHandler(runtime, xterm);
+  if (removeTerminalKeyHandler) {
+    runtime.globalDisposers.push(removeTerminalKeyHandler);
+  }
 
   runtime.xterm = xterm;
   runtime.fitAddon = fitAddon;
@@ -1781,6 +1963,10 @@ function startTerminalRuntime(runtime: ManagedTerminalRuntime) {
       if (ptyId !== runtime.ptyId) {
         return;
       }
+
+      // Clear the live PTY handle before any fallback logic runs so late
+      // resize/input events do not keep targeting an already-exited process.
+      setPtyId(runtime, null);
 
       if (runtime.waitingTimer) {
         clearTimeout(runtime.waitingTimer);

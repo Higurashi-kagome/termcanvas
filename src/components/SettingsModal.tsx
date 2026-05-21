@@ -816,12 +816,16 @@ export function SettingsModal({ onClose }: Props) {
     setSummaryEnabled,
     globalSearchEnabled,
     setGlobalSearchEnabled,
-    petEnabled,
-    setPetEnabled,
-    completionGlowEnabled,
-    setCompletionGlowEnabled,
-    trackpadSwipeFocusEnabled,
-    setTrackpadSwipeFocusEnabled,
+      petEnabled,
+      setPetEnabled,
+      completionGlowEnabled,
+      setCompletionGlowEnabled,
+      terminalSelectionAutoCopyEnabled,
+      setTerminalSelectionAutoCopyEnabled,
+      panToTerminalOnBodyClickEnabled,
+      setPanToTerminalOnBodyClickEnabled,
+      trackpadSwipeFocusEnabled,
+      setTrackpadSwipeFocusEnabled,
     quitOnLastWindowClosed,
     setQuitOnLastWindowClosed,
     summaryCli,
@@ -1496,12 +1500,30 @@ export function SettingsModal({ onClose }: Props) {
                     </SettingsRow>
                   </div>
 
-                  {isMac && (
-                    <div className="flex flex-col gap-5">
-                      <Eyebrow>
-                        {(t as unknown as Record<string, string>)
-                          .settings_features_group_input ?? "Input"}
-                      </Eyebrow>
+                  <div className="flex flex-col gap-5">
+                    <Eyebrow>
+                      {(t as unknown as Record<string, string>)
+                        .settings_features_group_input ?? "Input"}
+                    </Eyebrow>
+                    <SettingsRow
+                      label={t.terminal_selection_auto_copy_toggle}
+                      description={t.terminal_selection_auto_copy_toggle_desc}
+                    >
+                      <OnOffSegment
+                        value={terminalSelectionAutoCopyEnabled}
+                        onChange={setTerminalSelectionAutoCopyEnabled}
+                      />
+                    </SettingsRow>
+                    <SettingsRow
+                      label={t.terminal_body_click_pan_toggle}
+                      description={t.terminal_body_click_pan_toggle_desc}
+                    >
+                      <OnOffSegment
+                        value={panToTerminalOnBodyClickEnabled}
+                        onChange={setPanToTerminalOnBodyClickEnabled}
+                      />
+                    </SettingsRow>
+                    {isMac && (
                       <SettingsRow
                         label={t.trackpad_swipe_focus_toggle}
                         description={t.trackpad_swipe_focus_toggle_desc}
@@ -1511,8 +1533,8 @@ export function SettingsModal({ onClose }: Props) {
                           onChange={setTrackpadSwipeFocusEnabled}
                         />
                       </SettingsRow>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </section>
             )}

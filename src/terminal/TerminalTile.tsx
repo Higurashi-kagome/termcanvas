@@ -56,6 +56,7 @@ import { ActivitySparkline } from "./ActivitySparkline";
 import { TerminalFindOverlay } from "./TerminalFindOverlay";
 import { useTerminalFindStore } from "../stores/terminalFindStore";
 import { recordRenderDiagnostic } from "./renderDiagnostics";
+import { handleTerminalBodyClick } from "./terminalBodyClick";
 
 interface Props {
   lodMode: TerminalMountMode;
@@ -212,9 +213,10 @@ export function TerminalTile({
     (s) => s.terminals[terminal.id]?.copiedNonce ?? 0,
   );
   const mountNonceRef = useRef(copiedNonce);
-  const previewText = useTerminalRuntimeStore(
-    (s) => s.terminals[terminal.id]?.previewText ?? "",
+  const runtimeSnapshot = useTerminalRuntimeStore(
+    (s) => s.terminals[terminal.id],
   );
+  const previewText = runtimeSnapshot?.previewText ?? terminal.scrollback ?? "";
   const [dragOver, setDragOver] = useState(false);
   const agentBodyRef = useRef<HTMLDivElement>(null);
   const [agentBodySize, setAgentBodySize] = useState<{
@@ -260,6 +262,12 @@ export function TerminalTile({
     ...terminal,
     ...liveRuntimeState,
   };
+  const shouldShowRecoveredPreview =
+    lodMode === "live" &&
+    !terminal.minimized &&
+    !useAgentRenderer &&
+    liveTerminal.ptyId == null &&
+    previewText.trim().length > 0;
 
   const [frozenDims, setFrozenDims] = useState<{
     width: number;
@@ -522,6 +530,9 @@ export function TerminalTile({
   const activityHeatmapEnabled = usePreferencesStore(
     (s) => s.activityHeatmapEnabled,
   );
+  const panToTerminalOnBodyClickEnabled = usePreferencesStore(
+    (s) => s.panToTerminalOnBodyClickEnabled,
+  );
   const focusLiveTerminal = useCallback(() => {
     const tile = tileRef.current;
     if (!tile || tile.getClientRects().length === 0) {
@@ -538,6 +549,34 @@ export function TerminalTile({
   const scheduleXtermFocus = useCallback(() => {
     scheduleTerminalFocus(focusLiveTerminal, pendingFocusFrameRef);
   }, [focusLiveTerminal]);
+
+  const handleTerminalBodyAreaClick = useCallback(() => {
+    const adapter = getComposerAdapter(terminal.type);
+    handleTerminalBodyClick({
+      composerEnabled,
+      focusComposer: () => {
+        window.dispatchEvent(new CustomEvent("termcanvas:focus-composer"));
+      },
+      focusOverviewTerminal: focusTerminalInOverview,
+      focusXterm: scheduleXtermFocus,
+      hasComposerAdapter: adapter !== null && adapter.inputMode !== "type",
+      isOverviewMode,
+      panToTerminal: () =>
+        panToTerminal(terminal.id, {
+          focusComposer: false,
+          focusInput: false,
+        }),
+      panToTerminalOnClick: panToTerminalOnBodyClickEnabled,
+    });
+  }, [
+    composerEnabled,
+    focusTerminalInOverview,
+    isOverviewMode,
+    panToTerminalOnBodyClickEnabled,
+    scheduleXtermFocus,
+    terminal.id,
+    terminal.type,
+  ]);
 
   useEffect(() => {
     const adapter = getComposerAdapter(terminal.type);
@@ -1189,6 +1228,10 @@ export function TerminalTile({
             height: terminal.minimized ? 0 : undefined,
             overflow: "hidden",
           }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleTerminalBodyAreaClick();
+          }}
         >
           {!terminal.minimized && agentBodySize && (
             <AgentRenderer
@@ -1203,7 +1246,7 @@ export function TerminalTile({
             />
           )}
         </div>
-      ) : lodMode === "live" ? (
+      ) : lodMode === "live" && !shouldShowRecoveredPreview ? (
         <div
           className={
             terminal.minimized
@@ -1236,23 +1279,8 @@ export function TerminalTile({
                 : undefined),
             }}
             onClick={(e) => {
-              if (isOverviewMode) {
-                e.stopPropagation();
-                focusTerminalInOverview();
-                return;
-              }
-              const adapter = getComposerAdapter(terminal.type);
-              if (
-                !adapter ||
-                adapter.inputMode === "type" ||
-                !composerEnabled
-              ) {
-                scheduleXtermFocus();
-              } else {
-                window.dispatchEvent(
-                  new CustomEvent("termcanvas:focus-composer"),
-                );
-              }
+              e.stopPropagation();
+              handleTerminalBodyAreaClick();
             }}
           />
           <TerminalFindOverlay terminalId={terminal.id} />
@@ -1264,9 +1292,16 @@ export function TerminalTile({
             height: terminal.minimized ? 0 : undefined,
             overflow: "hidden",
           }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleTerminalBodyAreaClick();
+          }}
         >
           {!terminal.minimized && (
-            <PreviewPane lodMode={lodMode} previewText={previewText} />
+            <PreviewPane
+              lodMode={shouldShowRecoveredPreview ? "evicted" : lodMode}
+              previewText={previewText}
+            />
           )}
         </div>
       )}

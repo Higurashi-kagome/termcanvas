@@ -33,6 +33,12 @@ const DEFAULT_CHANGES_PANE_MAX_HEIGHT = "40%";
 const MIN_CHANGES_PANE_HEIGHT = 72;
 const MIN_HISTORY_PANE_HEIGHT = 140;
 
+function formatBranchCheckoutError(message: string): string {
+  const worktreeMatch = message.match(/already used by worktree at '([^']+)'/i);
+  if (!worktreeMatch) return message;
+  return `Branch is already checked out in another worktree: ${worktreeMatch[1]}`;
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -693,6 +699,7 @@ function FileListItem({
 function BranchPopover({
   branches,
   currentBranch,
+  currentWorktreePath,
   onSelect,
   onClose,
   searchPlaceholder,
@@ -703,8 +710,12 @@ function BranchPopover({
   onNewBranchNameChange,
   onCreateBranch,
 }: {
-  branches: string[];
+  branches: Array<{
+    name: string;
+    worktreePath: string | null;
+  }>;
   currentBranch: string | null;
+  currentWorktreePath: string | null;
   onSelect: (name: string) => void;
   onClose: () => void;
   searchPlaceholder: string;
@@ -735,7 +746,9 @@ function BranchPopover({
   const filtered = useMemo(() => {
     if (!query) return branches;
     const lower = query.toLowerCase();
-    return branches.filter((b) => b.toLowerCase().includes(lower));
+    return branches.filter((branch) =>
+      branch.name.toLowerCase().includes(lower),
+    );
   }, [branches, query]);
 
   return (
@@ -791,28 +804,58 @@ function BranchPopover({
           </div>
         )}
         <div className="max-h-48 overflow-auto">
-          {filtered.map((name) => (
+          {filtered.map((branch) => {
+            const isCurrent = branch.name === currentBranch;
+            const occupiedByOtherWorktree =
+              !!branch.worktreePath &&
+              branch.worktreePath !== currentWorktreePath;
+            const occupancyLabel = occupiedByOtherWorktree
+              ? branch.worktreePath
+              : null;
+
+            return (
             <div
-              key={name}
+              key={branch.name}
               className="group flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
             >
               <button
-                className="flex min-w-0 flex-1 items-center gap-2"
+                className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left disabled:cursor-not-allowed"
+                disabled={occupiedByOtherWorktree}
                 onClick={() => {
-                  onSelect(name);
+                  onSelect(branch.name);
                   onClose();
                 }}
               >
                 <span className="w-3 text-center" style={{ color: "var(--accent)" }}>
-                  {name === currentBranch ? "●" : ""}
+                  {isCurrent ? "●" : ""}
                 </span>
-                <span className="truncate text-[11px]" style={{ ...MONO_STYLE, color: "var(--text-primary)" }}>
-                  {name}
-                </span>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="truncate text-[11px]"
+                    style={{
+                      ...MONO_STYLE,
+                      color: occupiedByOtherWorktree
+                        ? "var(--text-muted)"
+                        : "var(--text-primary)",
+                    }}
+                  >
+                    {branch.name}
+                  </div>
+                  {occupancyLabel && (
+                    <div
+                      className="truncate text-[9px]"
+                      style={{ ...MONO_STYLE, color: "var(--text-faint)" }}
+                      title={occupancyLabel}
+                    >
+                      In use by {occupancyLabel}
+                    </div>
+                  )}
+                </div>
               </button>
-              {onDelete && name !== currentBranch && (
+              {onDelete && !isCurrent && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(name); }}
+                  onClick={(e) => { e.stopPropagation(); onDelete(branch.name); }}
+                  disabled={occupiedByOtherWorktree}
                   className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-[var(--surface-hover)]"
                   style={{ color: "var(--red)" }}
                   title="Delete branch"
@@ -821,7 +864,8 @@ function BranchPopover({
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
           {filtered.length === 0 && (
             <div className="px-3 py-2 text-[11px] text-[var(--text-faint)]" style={MONO_STYLE}>
               No matching branches
@@ -1498,7 +1542,10 @@ export function GitContent({
         await window.termcanvas.git.checkout(worktreePath!, ref);
         await refreshAll();
       } catch (error) {
-        notify("error", t.git_checkout_failed(String(error)));
+        notify(
+          "error",
+          t.git_checkout_failed(formatBranchCheckoutError(String(error))),
+        );
       } finally {
         setSwitchingBranch(false);
       }
@@ -1696,8 +1743,9 @@ export function GitContent({
 
         {branchPopoverOpen && (
           <BranchPopover
-            branches={branchInfo.orderedLocalBranchNames}
+            branches={branchInfo.orderedLocalBranches}
             currentBranch={branchInfo.currentBranchName}
+            currentWorktreePath={worktreePath}
             onSelect={handleBranchSwitch}
             onClose={() => { setBranchPopoverOpen(false); setShowNewBranch(false); }}
             searchPlaceholder={t.git_search_branches}

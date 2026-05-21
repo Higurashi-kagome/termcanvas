@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { open, readFile } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
+import { parseNulSeparatedGitPaths } from "./git-paths";
 
 const execFileAsync = promisify(execFile);
 const MAX_FILE_CONCURRENCY = 5;
@@ -263,7 +264,7 @@ export async function getProjectDiff(
   const [diff, numstat, untrackedRaw] = await Promise.all([
     execGitText(worktreePath, ["diff", "HEAD"], 10 * 1024 * 1024),
     execGitText(worktreePath, ["diff", "HEAD", "--numstat"]),
-    execGitText(worktreePath, ["ls-files", "--others", "--exclude-standard"]),
+    execGitText(worktreePath, ["ls-files", "-z", "--others", "--exclude-standard"]),
   ]);
 
   const trackedFiles = await mapWithConcurrency(
@@ -276,7 +277,7 @@ export async function getProjectDiff(
   );
 
   const untrackedEntries = await mapWithConcurrency(
-    listLines(untrackedRaw),
+    parseNulSeparatedGitPaths(untrackedRaw),
     MAX_FILE_CONCURRENCY,
     (name) => buildUntrackedProjectDiffEntry(worktreePath, name),
   );
@@ -307,9 +308,9 @@ export async function getApiDiff(
 }> {
   const untrackedRaw = await execGitText(
     worktreePath,
-    ["ls-files", "--others", "--exclude-standard"],
+    ["ls-files", "-z", "--others", "--exclude-standard"],
   );
-  const untrackedNames = listLines(untrackedRaw);
+  const untrackedNames = parseNulSeparatedGitPaths(untrackedRaw);
 
   if (summary) {
     const numstat = await execGitText(worktreePath, ["diff", "HEAD", "--numstat"]);

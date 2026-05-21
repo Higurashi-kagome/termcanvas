@@ -117,6 +117,32 @@ test("getProjectDiff preserves tracked, untracked, and image metadata", async ()
   });
 });
 
+test("getProjectDiff preserves unicode untracked paths", async () => {
+  await withTempRepo(async (repoPath) => {
+    fs.writeFileSync(path.join(repoPath, "README.md"), "root\n");
+    execSync('git add README.md && git commit -m "init"', {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    fs.writeFileSync(path.join(repoPath, "八股.md"), "hello\n");
+
+    const result = await getProjectDiff(repoPath);
+
+    assert.deepEqual(result.files.map((file) => file.name), ["八股.md"]);
+    assert.match(result.diff, /diff --git a\/八股\.md b\/八股\.md/);
+
+    const summary = await getApiDiff(repoPath, true);
+    assert.deepEqual(summary.files, [
+      {
+        name: "八股.md",
+        additions: 1,
+        deletions: 0,
+        binary: false,
+      },
+    ]);
+  });
+});
+
 test("getApiDiff preserves existing summary shape", async () => {
   await withTempRepo(async (repoPath) => {
     const trackedPath = path.join(repoPath, "tracked.txt");

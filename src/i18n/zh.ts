@@ -176,6 +176,9 @@ export const zh = {
   git_hunk_failed: (message: string) => `区块操作失败：${message}`,
   global_search_toggle: "全局搜索 (Cmd+K)",
   global_search_toggle_desc: "实验性功能。跨文件、会话、提交、记忆和操作搜索",
+  terminal_selection_auto_copy_toggle: "终端选区自动复制",
+  terminal_selection_auto_copy_toggle_desc:
+    "开启后，在终端中用鼠标选中文本并释放时，会自动复制到剪贴板。",
   search_placeholder: "搜索所有内容…",
   search_placeholder_browse: "输入过滤,或直接浏览下方最近会话",
   search_no_results: "无搜索结果",
@@ -373,6 +376,9 @@ export const zh = {
   completion_glow_toggle: "完成终端边缘提示",
   completion_glow_toggle_desc:
     "实验性功能。当左右两侧仍有已结束但未查看的终端时，高亮对应屏幕边缘",
+  terminal_body_click_pan_toggle: "点击终端内容区时居中",
+  terminal_body_click_pan_toggle_desc:
+    "开启后，点击终端输出内容区域时会将该终端移动到画布中心，无需点击标题栏",
   trackpad_swipe_focus_toggle: "触控板滑动切换聚焦",
   trackpad_swipe_focus_toggle_desc:
     "实验性功能。在画布上使用双指横向滑动，在聚焦终端和全景视图之间切换",

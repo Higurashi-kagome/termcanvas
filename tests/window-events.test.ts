@@ -48,3 +48,36 @@ test("canSendToWindow is false after webContents is destroyed", () => {
   assert.equal(canSendToWindow(win), false);
   assert.equal(sendToWindow(win, "terminal:output", 1, "hi"), false);
 });
+
+test("sendToWindow returns false when webContents.send throws", () => {
+  const win = {
+    isDestroyed: () => false,
+    webContents: {
+      isDestroyed: () => false,
+      send: () => {
+        const error = Object.assign(new Error("broken pipe"), {
+          code: "EPIPE",
+        });
+        throw error;
+      },
+    },
+  };
+
+  assert.equal(sendToWindow(win, "sessions:list-changed", []), false);
+});
+
+test("sendToWindow rethrows unexpected webContents.send errors", () => {
+  const win = {
+    isDestroyed: () => false,
+    webContents: {
+      isDestroyed: () => false,
+      send: () => {
+        throw new Error("serialization failed");
+      },
+    },
+  };
+
+  assert.throws(() => sendToWindow(win, "sessions:list-changed", []), {
+    message: "serialization failed",
+  });
+});

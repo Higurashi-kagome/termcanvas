@@ -38,6 +38,25 @@ export interface SessionHistoryProjectTree {
   latestActivityAt: string;
 }
 
+export interface SessionHistoryScopeProject {
+  projectPath: string;
+  worktreePaths: string[];
+}
+
+export interface SessionHistoryWorktreeGroup {
+  worktreePath: string;
+  worktreeLabel: string;
+  tree: SessionHistoryProjectTree;
+}
+
+export interface SessionHistoryProjectGroup {
+  projectPath: string;
+  projectLabel: string;
+  projectTree: SessionHistoryProjectTree | null;
+  worktrees: SessionHistoryWorktreeGroup[];
+  latestActivityAt: string;
+}
+
 export interface SessionHistoryChangedEvent {
   reason:
     | "session_attached"

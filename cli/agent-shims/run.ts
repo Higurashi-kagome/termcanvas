@@ -10,6 +10,12 @@ import {
 
 const HELP_ARGS = new Set(["-h", "--help", "help", "-v", "--version", "version"]);
 
+export interface AgentShimLaunchSpec {
+  command: string;
+  args: string[];
+  windowsVerbatimArguments?: boolean;
+}
+
 function moduleDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
 }
@@ -87,6 +93,70 @@ function resolveRealCommand(command: string): string | null {
   return null;
 }
 
+function isWindowsBatchScript(command: string): boolean {
+  if (process.platform !== "win32") return false;
+  const lower = command.toLowerCase();
+  return lower.endsWith(".cmd") || lower.endsWith(".bat");
+}
+
+function escapeWindowsBatchValue(value: string): string {
+  return value.replace(/%/g, "%%").replace(/"/g, '""');
+}
+
+function quoteWindowsBatchArgument(value: string): string {
+  return `"${escapeWindowsBatchValue(value)}"`;
+}
+
+function resolveWindowsCommandShell(): string | null {
+  const candidates = [
+    process.env.ComSpec?.trim(),
+    "cmd.exe",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (path.isAbsolute(candidate)) {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {
+        continue;
+      }
+    }
+
+    const resolved = resolveRealCommand(candidate);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+export function buildAgentShimLaunchSpec(
+  realCommand: string,
+  args: string[],
+): AgentShimLaunchSpec {
+  if (!isWindowsBatchScript(realCommand)) {
+    return {
+      command: realCommand,
+      args,
+    };
+  }
+
+  const commandShell = resolveWindowsCommandShell();
+  if (!commandShell) {
+    throw new Error("TermCanvas could not resolve cmd.exe for Windows batch launch.");
+  }
+
+  const commandLine = `""${escapeWindowsBatchValue(realCommand)}"${
+    args.length ? ` ${args.map(quoteWindowsBatchArgument).join(" ")}` : ""
+  }"`;
+
+  return {
+    command: commandShell,
+    args: ["/d", "/s", "/c", commandLine],
+    windowsVerbatimArguments: true,
+  };
+}
+
 function shouldInjectMcp(args: string[]): boolean {
   return !args.some((arg) => HELP_ARGS.has(arg));
 }
@@ -123,9 +193,11 @@ export function runAgentShim(provider: ComputerUseMcpProvider): never {
   }
 
   const args = getInjectedArgs(provider, process.argv.slice(2));
-  const result = spawnSync(realCommand, args, {
+  const launchSpec = buildAgentShimLaunchSpec(realCommand, args);
+  const result = spawnSync(launchSpec.command, launchSpec.args, {
     stdio: "inherit",
     env: process.env,
+    windowsVerbatimArguments: launchSpec.windowsVerbatimArguments,
   });
 
   if (result.error) {

@@ -177,6 +177,10 @@ export const en = {
   git_hunk_failed: (message: string) => `Hunk operation failed: ${message}`,
   global_search_toggle: "Global Search (Cmd+K)",
   global_search_toggle_desc: "Experimental. Search across files, sessions, commits, memory, and actions",
+  terminal_selection_auto_copy_toggle:
+    "Copy terminal selection automatically",
+  terminal_selection_auto_copy_toggle_desc:
+    "When enabled, selecting text in a terminal copies it to the clipboard on mouse release.",
   search_placeholder: "Search everything\u2026",
   search_placeholder_browse:
     "Type to filter, or browse recent sessions below",
@@ -382,6 +386,9 @@ export const en = {
   completion_glow_toggle: "Completed terminal edge glow",
   completion_glow_toggle_desc:
     "Experimental. Highlights the left or right screen edge when completed terminals still need attention",
+  terminal_body_click_pan_toggle: "Center canvas on terminal body click",
+  terminal_body_click_pan_toggle_desc:
+    "When enabled, clicking the terminal output area recenters that terminal without using the title bar",
   trackpad_swipe_focus_toggle: "Trackpad swipe to toggle focus",
   trackpad_swipe_focus_toggle_desc:
     "Experimental. Two-finger horizontal swipe on canvas to toggle between zoom-focus and fit-all view",
