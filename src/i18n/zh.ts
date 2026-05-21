@@ -197,6 +197,8 @@ export const zh = {
   session_replay_resume: "继续",
   session_replay_resume_toast: "已在新终端继续这个 session",
   session_replay_resume_tooltip: "打开新终端并继续这个 session",
+  session_replay_resume_project_root_tooltip:
+    "在项目根目录打开新终端并继续这个 session",
   session_replay_resume_unavailable: "请先把该项目加入画布再继续",
   session_replay_resume_cmd_tooltip: "点击复制 resume 命令",
   session_replay_resume_cmd_copied: "已复制 resume 命令",
@@ -609,6 +611,7 @@ export const zh = {
   sessions_history_children_count: (n: number) => `${n} 个子会话`,
   sessions_history_pin_tree: "置顶整棵会话树",
   sessions_history_hide_tree: "从历史中隐藏此子树",
+  sessions_history_deleted_worktree: "已删",
   sessions_history_more_hint: "更早的会话 — 可用 Cmd+K 精确查找",
   sessions_history_load_more: "加载更多",
   sessions_overlay_empty_title: "请在左侧选择一个会话",

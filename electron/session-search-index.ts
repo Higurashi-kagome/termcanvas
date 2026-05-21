@@ -468,15 +468,65 @@ interface SessionFileCandidate {
   size: number;
 }
 
+interface ClaudeProjectDirCandidate {
+  projectDir: string;
+  claudeProjectDir: string;
+}
+
+function resolveClaudeProjectDirsForHistory(
+  claudeRoot: string,
+  projectDirs: string[],
+  deletedWorktreeParentProjects: string[],
+): ClaudeProjectDirCandidate[] {
+  const byClaudeDir = new Map<string, ClaudeProjectDirCandidate>();
+  for (const projectDir of projectDirs) {
+    const claudeProjectDir = path.join(
+      claudeRoot,
+      encodeProjectPathForClaude(projectDir),
+    );
+    byClaudeDir.set(claudeProjectDir, { projectDir, claudeProjectDir });
+  }
+
+  if (deletedWorktreeParentProjects.length === 0) {
+    return [...byClaudeDir.values()];
+  }
+
+  let encodedProjectDirs: string[];
+  try {
+    encodedProjectDirs = fs.readdirSync(claudeRoot);
+  } catch {
+    return [...byClaudeDir.values()];
+  }
+
+  const deletedPrefixes = deletedWorktreeParentProjects
+    .map((projectDir) => `${encodeProjectPathForClaude(projectDir)}-.worktrees-`)
+    .filter(Boolean);
+  for (const encoded of encodedProjectDirs) {
+    if (!deletedPrefixes.some((prefix) => encoded.startsWith(prefix))) continue;
+    const claudeProjectDir = path.join(claudeRoot, encoded);
+    if (byClaudeDir.has(claudeProjectDir)) continue;
+    byClaudeDir.set(claudeProjectDir, {
+      projectDir: decodeClaudeEncodedPath(encoded),
+      claudeProjectDir,
+    });
+  }
+
+  return [...byClaudeDir.values()];
+}
+
 async function listSessionFileCandidates(
   projectDirs: string[],
+  options: { includeDeletedWorktreeClaudeDirsFor?: string[] } = {},
 ): Promise<SessionFileCandidate[]> {
   const candidates: SessionFileCandidate[] = [];
 
   const claudeRoot = path.join(os.homedir(), ".claude", "projects");
-  for (const projectDir of projectDirs) {
-    const encoded = encodeProjectPathForClaude(projectDir);
-    const claudeProjectDir = path.join(claudeRoot, encoded);
+  const claudeProjectDirs = resolveClaudeProjectDirsForHistory(
+    claudeRoot,
+    projectDirs,
+    options.includeDeletedWorktreeClaudeDirsFor ?? [],
+  );
+  for (const { projectDir, claudeProjectDir } of claudeProjectDirs) {
     try {
       const stat = await fsp.stat(claudeProjectDir);
       if (!stat.isDirectory()) continue;
@@ -616,12 +666,52 @@ export async function listSessionGroupsForScope(
       ]),
     ),
   ];
-  const entries = await listSessionsForProjects(allProjectDirs);
+  const entries = await listSessionsForHistoryScope(scopeProjects, allProjectDirs);
 
   return scopeProjects
     .map((scope) => buildScopedHistoryGroup(scope, entries))
     .filter((group): group is SessionHistoryProjectGroup => group !== null)
     .sort((a, b) => b.latestActivityAt.localeCompare(a.latestActivityAt));
+}
+
+async function listSessionsForHistoryScope(
+  scopeProjects: SessionHistoryScopeProject[],
+  projectDirs: string[],
+): Promise<SessionSearchEntry[]> {
+  if (projectDirs.length === 0) return [];
+
+  const exactProjectSet = new Set(
+    projectDirs.map(normalizeProjectPathForMatch).filter(Boolean),
+  );
+  const projectPathKeys = scopeProjects
+    .map((scope) => normalizeProjectPathForMatch(scope.projectPath))
+    .filter(Boolean);
+  const candidates = await listSessionFileCandidates(projectDirs, {
+    includeDeletedWorktreeClaudeDirsFor: scopeProjects.map(
+      (scope) => scope.projectPath,
+    ),
+  });
+
+  const results: SessionSearchEntry[] = [];
+  for (const candidate of candidates) {
+    const built = await buildEntry(
+      candidate.filePath,
+      candidate.provider,
+      candidate.claudeProjectDir,
+    );
+    if (!built) continue;
+
+    const entryPathKey = normalizeProjectPathForMatch(built.projectDir);
+    if (
+      exactProjectSet.has(entryPathKey) ||
+      findDeletedWorktreeProjectKey(entryPathKey, projectPathKeys)
+    ) {
+      results.push(built);
+    }
+  }
+
+  results.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  return results;
 }
 
 /**
@@ -722,20 +812,39 @@ function buildScopedHistoryGroup(
     (entry) => normalizeProjectPathForMatch(entry.projectDir) === projectPathKey,
   );
 
-  const uniqueWorktreePaths = [
-    ...new Map(
-      scope.worktreePaths
-        .map((worktreePath) => [
-          normalizeProjectPathForMatch(worktreePath),
-          worktreePath,
-        ] as const)
-        .filter(([worktreePathKey]) => worktreePathKey && worktreePathKey !== projectPathKey),
-    ).values(),
+  const knownWorktreePaths = new Map(
+    scope.worktreePaths
+      .map((worktreePath) => [
+        normalizeProjectPathForMatch(worktreePath),
+        worktreePath,
+      ] as const)
+      .filter(([worktreePathKey]) => worktreePathKey && worktreePathKey !== projectPathKey),
+  );
+
+  const deletedWorktreePaths = new Map<string, string>();
+  for (const entry of entries) {
+    const entryPathKey = normalizeProjectPathForMatch(entry.projectDir);
+    if (!entryPathKey || knownWorktreePaths.has(entryPathKey)) continue;
+    if (getDeletedWorktreeProjectKey(entryPathKey, projectPathKey)) {
+      deletedWorktreePaths.set(entryPathKey, entry.projectDir);
+    }
+  }
+
+  const worktreeScopes = [
+    ...[...knownWorktreePaths.entries()].map(([worktreePathKey, worktreePath]) => ({
+      worktreePathKey,
+      worktreePath,
+      isDeleted: false,
+    })),
+    ...[...deletedWorktreePaths.entries()].map(([worktreePathKey, worktreePath]) => ({
+      worktreePathKey,
+      worktreePath,
+      isDeleted: true,
+    })),
   ];
 
-  const worktrees = uniqueWorktreePaths
-    .map((worktreePath) => {
-      const worktreePathKey = normalizeProjectPathForMatch(worktreePath);
+  const worktrees = worktreeScopes
+    .map(({ worktreePath, worktreePathKey, isDeleted }) => {
       const worktreeEntries = entries.filter(
         (entry) =>
           normalizeProjectPathForMatch(entry.projectDir) === worktreePathKey,
@@ -750,6 +859,7 @@ function buildScopedHistoryGroup(
       return {
         worktreePath,
         worktreeLabel: path.basename(worktreePath),
+        isDeleted: isDeleted ? true : undefined,
         tree,
       };
     })
@@ -782,6 +892,37 @@ function resolveLatestActivity(
     }
   }
   return latest;
+}
+
+function findDeletedWorktreeProjectKey(
+  entryPathKey: string,
+  projectPathKeys: string[],
+): string | null {
+  for (const projectPathKey of projectPathKeys) {
+    if (getDeletedWorktreeProjectKey(entryPathKey, projectPathKey)) {
+      return projectPathKey;
+    }
+  }
+  return null;
+}
+
+function getDeletedWorktreeProjectKey(
+  entryPathKey: string,
+  projectPathKey: string,
+): string | null {
+  if (!entryPathKey || !projectPathKey) return null;
+
+  const worktreesPrefix = `${projectPathKey}/.worktrees/`;
+  if (!entryPathKey.startsWith(worktreesPrefix)) {
+    return null;
+  }
+
+  const relative = entryPathKey.slice(worktreesPrefix.length);
+  if (!relative || relative.includes("/")) {
+    return null;
+  }
+
+  return projectPathKey;
 }
 
 /**

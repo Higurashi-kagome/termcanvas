@@ -365,6 +365,183 @@ test("listSessionGroupsForScope keeps project-root sessions at the project level
   });
 });
 
+test("listSessionGroupsForScope groups deleted worktree sessions under their project", async () => {
+  await withTempHome(async (homeDir) => {
+    const deletedWorktreeFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "20",
+      "deleted-worktree-root.jsonl",
+    );
+    const descendantFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "20",
+      "deleted-worktree-descendant.jsonl",
+    );
+    writeJsonl(deletedWorktreeFile, [
+      {
+        timestamp: "2026-05-20T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "deleted-worktree-session",
+          cwd: "/repo/.worktrees/removed-feature",
+        },
+      },
+      {
+        timestamp: "2026-05-20T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "deleted worktree prompt",
+        },
+      },
+    ]);
+    writeJsonl(descendantFile, [
+      {
+        timestamp: "2026-05-20T11:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "deleted-worktree-descendant-session",
+          cwd: "/repo/.worktrees/removed-feature/subdir",
+        },
+      },
+      {
+        timestamp: "2026-05-20T11:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "deleted worktree descendant prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "/repo",
+        worktreePaths: [],
+      },
+    ]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]?.projectTree, null);
+    assert.deepEqual(
+      groups[0]?.worktrees.map((group) => ({
+        path: group.worktreePath,
+        label: group.worktreeLabel,
+        deleted: group.isDeleted,
+        sessions: group.tree.roots.map((node) => node.sessionId),
+      })),
+      [
+        {
+          path: "/repo/.worktrees/removed-feature",
+          label: "removed-feature",
+          deleted: true,
+          sessions: ["deleted-worktree-session"],
+        },
+      ],
+    );
+  });
+});
+
+test("listSessionGroupsForScope matches deleted worktree sessions despite Windows slash style differences", async () => {
+  await withTempHome(async (homeDir) => {
+    const deletedWorktreeFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "20",
+      "deleted-worktree-windows.jsonl",
+    );
+    writeJsonl(deletedWorktreeFile, [
+      {
+        timestamp: "2026-05-20T12:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "deleted-worktree-windows-session",
+          cwd: "E:\\GitHub\\open-source\\termcanvas\\.worktrees\\removed-feature",
+        },
+      },
+      {
+        timestamp: "2026-05-20T12:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "deleted worktree windows prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "E:/GitHub/open-source/termcanvas",
+        worktreePaths: [],
+      },
+    ]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]?.worktrees[0]?.isDeleted, true);
+    assert.deepEqual(
+      groups[0]?.worktrees[0]?.tree.roots.map((node) => node.sessionId),
+      ["deleted-worktree-windows-session"],
+    );
+  });
+});
+
+test("listSessionGroupsForScope discovers deleted worktree sessions stored in Claude project directories", async () => {
+  await withTempHome(async (homeDir) => {
+    const claudeFile = path.join(
+      homeDir,
+      ".claude",
+      "projects",
+      "-repo-.worktrees-removed-feature",
+      "claude-deleted-worktree.jsonl",
+    );
+    writeJsonl(claudeFile, [
+      {
+        timestamp: "2026-05-20T10:00:00.000Z",
+        type: "user",
+        cwd: "/repo/.worktrees/removed-feature",
+        message: {
+          role: "user",
+          content: "deleted claude worktree prompt",
+        },
+      },
+    ]);
+
+    const groups = await listSessionGroupsForScope([
+      {
+        projectPath: "/repo",
+        worktreePaths: [],
+      },
+    ]);
+
+    assert.equal(groups.length, 1);
+    assert.deepEqual(
+      groups[0]?.worktrees.map((group) => ({
+        label: group.worktreeLabel,
+        deleted: group.isDeleted,
+        sessions: group.tree.roots.map((node) => node.sessionId),
+      })),
+      [
+        {
+          label: "removed-feature",
+          deleted: true,
+          sessions: ["claude-deleted-worktree"],
+        },
+      ],
+    );
+  });
+});
+
 test("listSessionGroupsForScope omits worktrees with no exact-match sessions and ignores descendant directories", async () => {
   await withTempHome(async (homeDir) => {
     const descendantFile = path.join(

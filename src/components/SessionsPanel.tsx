@@ -1652,16 +1652,29 @@ function WorktreeHistoryGroup({
           <BranchIcon />
         </span>
         <span className="min-w-0 flex-1">
-          <span
-            className="block truncate"
-            style={{
-              fontSize: "var(--text-sm)",
-              fontWeight: "var(--weight-regular)",
-              color: "var(--text-primary)",
-              lineHeight: "var(--leading-snug)",
-            }}
-          >
-            {worktree.worktreeLabel}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span
+              className="block min-w-0 truncate"
+              style={{
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--weight-regular)",
+                color: "var(--text-primary)",
+                lineHeight: "var(--leading-snug)",
+              }}
+            >
+              {worktree.worktreeLabel}
+            </span>
+            {worktree.isDeleted && (
+              <span
+                className="shrink-0 text-[10px]"
+                style={{
+                  color: "var(--text-muted)",
+                  lineHeight: "14px",
+                }}
+              >
+                [{t.sessions_history_deleted_worktree}]
+              </span>
+            )}
           </span>
           <span className="mt-0.5 block tc-timestamp">
             {formatHistoryTime(worktree.tree.latestActivityAt)} · {countLabel}

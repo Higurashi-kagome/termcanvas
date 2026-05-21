@@ -46,6 +46,7 @@ export interface SessionHistoryScopeProject {
 export interface SessionHistoryWorktreeGroup {
   worktreePath: string;
   worktreeLabel: string;
+  isDeleted?: boolean;
   tree: SessionHistoryProjectTree;
 }
 

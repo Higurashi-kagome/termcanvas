@@ -9,9 +9,9 @@ import { createTerminalInScene } from "../actions/terminalSceneActions";
 import { createTerminal } from "../stores/projectStore";
 import { panToTerminal } from "../utils/panToTerminal";
 import type { TerminalType } from "../types";
-import { normalizeProjectPathForMatch } from "../../shared/project-path-match.ts";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { markdownClassName, renderMarkdown } from "../utils/markdownClass";
+import { resolveReplayResumeTarget } from "./sessionReplayModel.ts";
 
 /*
  * Session transcript.
@@ -1181,26 +1181,11 @@ export function SessionReplayView() {
   const resumeTarget = useMemo(() => {
     if (!timeline) return null;
     const provider = providerFromFilePath(timeline.filePath);
-    if (!provider) return null;
-    const targetProjectDir = normalizeProjectPathForMatch(timeline.projectDir);
-    const projects = useProjectStore.getState().projects;
-    for (const project of projects) {
-      for (const worktree of project.worktrees) {
-        // Session history stores the raw cwd reported by the CLI, while canvas
-        // worktrees keep whatever path spelling was scanned into app state. On
-        // Windows those often differ only by slash direction or drive-letter
-        // casing, so normalize before matching to keep Resume available.
-        if (normalizeProjectPathForMatch(worktree.path) === targetProjectDir) {
-          return {
-            provider,
-            projectId: project.id,
-            worktreeId: worktree.id,
-            sessionId: timeline.sessionId,
-          };
-        }
-      }
-    }
-    return null;
+    return resolveReplayResumeTarget(useProjectStore.getState().projects, {
+      provider,
+      projectDir: timeline.projectDir,
+      sessionId: timeline.sessionId,
+    });
   }, [timeline]);
 
   const handleResume = useCallback(() => {
@@ -1420,8 +1405,11 @@ export function SessionReplayView() {
         resumeDisabled={!resumeTarget}
         resumeTooltip={
           resumeTarget
-            ? ((t.session_replay_resume_tooltip as unknown as string) ??
-              `Resume in a new ${resumeTarget.provider} terminal (--resume ${resumeTarget.sessionId.slice(0, 8)})`)
+            ? resumeTarget.usesProjectFallback
+              ? ((t.session_replay_resume_project_root_tooltip as unknown as string) ??
+                "Open a new terminal in the project root and resume this session")
+              : ((t.session_replay_resume_tooltip as unknown as string) ??
+                `Resume in a new ${resumeTarget.provider} terminal (--resume ${resumeTarget.sessionId.slice(0, 8)})`)
             : ((t.session_replay_resume_unavailable as unknown as string) ??
               "Add this project to the canvas to resume")
         }

@@ -202,6 +202,35 @@ test("buildVisibleHistoryGroups preserves worktree labels", () => {
   assert.equal(visible[0]?.worktrees[0]?.worktreeLabel, "feat-auto-focus");
 });
 
+test("buildVisibleHistoryGroups preserves deleted worktree state", () => {
+  const groups: SessionHistoryProjectGroup[] = [
+    {
+      projectPath: "/repo",
+      projectLabel: "repo",
+      projectTree: null,
+      worktrees: [
+        {
+          worktreePath: "/repo/.worktrees/removed-feature",
+          worktreeLabel: "removed-feature",
+          isDeleted: true,
+          tree: {
+            projectDir: "/repo/.worktrees/removed-feature",
+            roots: [node("deleted-worktree-root")],
+            sessionCount: 1,
+            rootCount: 1,
+            latestActivityAt: "2026-05-20T10:00:00.000Z",
+          },
+        },
+      ],
+      latestActivityAt: "2026-05-20T10:00:00.000Z",
+    },
+  ];
+
+  const visible = buildVisibleHistoryGroups(groups);
+
+  assert.equal(visible[0]?.worktrees[0]?.isDeleted, true);
+});
+
 test("buildVisibleHistoryGroups removes worktrees whose trees are fully hidden", () => {
   const groups: SessionHistoryProjectGroup[] = [
     {

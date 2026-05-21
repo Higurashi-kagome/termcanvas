@@ -200,6 +200,8 @@ export const en = {
   session_replay_resume: "Resume",
   session_replay_resume_toast: "Resumed session in a new terminal",
   session_replay_resume_tooltip: "Open a new terminal and resume this session",
+  session_replay_resume_project_root_tooltip:
+    "Open a new terminal in the project root and resume this session",
   session_replay_resume_unavailable: "Add this project to the canvas to resume",
   session_replay_resume_cmd_tooltip: "Click to copy resume command",
   session_replay_resume_cmd_copied: "Copied resume command",
@@ -620,6 +622,7 @@ export const en = {
     `${n} child${n === 1 ? "" : "ren"}`,
   sessions_history_pin_tree: "Pin tree to top",
   sessions_history_hide_tree: "Hide subtree from history",
+  sessions_history_deleted_worktree: "Deleted",
   sessions_history_more_hint: "older sessions — use Cmd+K to find specific ones",
   sessions_history_load_more: "Load more",
   sessions_overlay_empty_title: "Pick a session on the left",
