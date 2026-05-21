@@ -4,6 +4,7 @@ import { useProjectStore } from "../stores/projectStore";
 import { useTerminalRuntimeStore } from "../terminal/terminalRuntimeStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useCompletionSeenStore } from "../stores/completionSeenStore";
+import { useLeftPanelUiStateStore } from "../stores/leftPanelUiStateStore";
 import { useT } from "../i18n/useT";
 import { useSidebarDragStore } from "../stores/sidebarDragStore";
 import { useViewportFocusStore } from "../stores/viewportFocusStore";
@@ -93,6 +94,7 @@ export function LeftPanel() {
   const seenTerminalIds = useCompletionSeenStore((s) => s.seenTerminalIds);
   const markCompletionSeen = useCompletionSeenStore((s) => s.markSeen);
   const syncActiveDoneIds = useCompletionSeenStore((s) => s.syncActiveDoneIds);
+  const pruneLeftPanelUiState = useLeftPanelUiStateStore((s) => s.prune);
 
   const [addingProject, setAddingProject] = useState(false);
 
@@ -175,6 +177,34 @@ export function LeftPanel() {
       })),
     [projects],
   );
+  const sessionProjectPaths = useMemo(
+    () => projects.map((project) => project.path),
+    [projects],
+  );
+  const sessionWorktreePaths = useMemo(
+    () =>
+      projects.flatMap((project) =>
+        project.worktrees.map((worktree) => worktree.path),
+      ),
+    [projects],
+  );
+  const historyProjectPaths = useMemo(
+    () => historyScopeProjects.map((project) => project.projectPath),
+    [historyScopeProjects],
+  );
+
+  useEffect(() => {
+    pruneLeftPanelUiState({
+      sessionProjectPaths,
+      sessionWorktreePaths,
+      historyProjectPaths,
+    });
+  }, [
+    historyProjectPaths,
+    pruneLeftPanelUiState,
+    sessionProjectPaths,
+    sessionWorktreePaths,
+  ]);
 
   const handleOpenReplay = useCallback(
     (filePath: string) => {

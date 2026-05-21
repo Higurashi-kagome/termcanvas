@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSessionPanelCollapseStore } from "../stores/sessionPanelCollapseStore";
+import { useLeftPanelUiStateStore } from "../stores/leftPanelUiStateStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useNotificationStore } from "../stores/notificationStore";
 import { usePinStore } from "../stores/pinStore";
@@ -157,9 +157,11 @@ function WorktreeRow({
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
 }) {
   const t = useT();
-  const toggle = useSessionPanelCollapseStore((s) => s.toggle);
-  const collapsed = useSessionPanelCollapseStore((s) =>
-    s.isCollapsed(group.worktreeId),
+  const toggleSessionWorktree = useLeftPanelUiStateStore(
+    (s) => s.toggleSessionWorktree,
+  );
+  const collapsed = useLeftPanelUiStateStore((s) =>
+    s.isSessionWorktreeCollapsed(group.worktreePath),
   );
 
   const handleNewTerminal = (type: "shell" | "claude" | "codex") => {
@@ -279,7 +281,7 @@ function WorktreeRow({
           // handled separately in onContextMenu and must NOT toggle — see
           // below.
           handleActivate();
-          toggle(group.worktreeId);
+          toggleSessionWorktree(group.worktreePath);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -304,7 +306,7 @@ function WorktreeRow({
           className="tc-row-icon shrink-0 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"
           onClick={(e) => {
             e.stopPropagation();
-            toggle(group.worktreeId);
+            toggleSessionWorktree(group.worktreePath);
           }}
         >
           <ChevronIcon open={!collapsed} />
@@ -418,9 +420,11 @@ function ProjectRow({
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
 }) {
   const t = useT();
-  const toggle = useSessionPanelCollapseStore((s) => s.toggle);
-  const collapsed = useSessionPanelCollapseStore((s) =>
-    s.isCollapsed(project.projectId),
+  const toggleSessionProject = useLeftPanelUiStateStore(
+    (s) => s.toggleSessionProject,
+  );
+  const collapsed = useLeftPanelUiStateStore((s) =>
+    s.isSessionProjectCollapsed(project.projectPath),
   );
   const taskToggle = usePinStore((s) => s.toggle);
   const openProjectPath = usePinStore((s) => s.openProjectPath);
@@ -532,7 +536,7 @@ function ProjectRow({
           // both focus it and toggle collapse, instead of forcing the user to
           // aim for the small chevron.
           handleActivate();
-          toggle(project.projectId);
+          toggleSessionProject(project.projectPath);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -557,7 +561,7 @@ function ProjectRow({
           className="tc-row-icon shrink-0 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"
           onClick={(e) => {
             e.stopPropagation();
-            toggle(project.projectId);
+            toggleSessionProject(project.projectPath);
           }}
         >
           <ChevronIcon open={!collapsed} />
@@ -600,9 +604,9 @@ function ProjectRow({
           className="opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => {
             e.stopPropagation();
-            const store = useSessionPanelCollapseStore.getState();
-            if (store.isCollapsed(project.projectId)) {
-              store.toggle(project.projectId);
+            const store = useLeftPanelUiStateStore.getState();
+            if (store.isSessionProjectCollapsed(project.projectPath)) {
+              store.toggleSessionProject(project.projectPath);
             }
             setCreating(true);
           }}
@@ -646,9 +650,9 @@ function ProjectRow({
               {
                 label: t.panel_new_worktree,
                 onClick: () => {
-                  const store = useSessionPanelCollapseStore.getState();
-                  if (store.isCollapsed(project.projectId)) {
-                    store.toggle(project.projectId);
+                  const store = useLeftPanelUiStateStore.getState();
+                  if (store.isSessionProjectCollapsed(project.projectPath)) {
+                    store.toggleSessionProject(project.projectPath);
                   }
                   setCreating(true);
                 },

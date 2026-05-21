@@ -181,7 +181,7 @@ test("buildCanvasTerminalSections prioritizes focused terminal and groups remain
 
   assert.equal(sections.focused?.terminalId, "terminal-focused");
   assert.equal(sections.focused?.state, "done");
-  assert.equal(sections.focused?.title, "review ui · codex");
+  assert.equal(sections.focused?.title, "review ui");
 
   // stall_candidate is no longer promoted to attention — it's a low-
   // confidence "output went quiet" heuristic that fires on slow models.
@@ -319,18 +319,21 @@ test("buildProjectTree preserves project order and handles multiple worktrees", 
     ],
   ]);
 
-  const tree = buildProjectTree(projects, telemetryByTerminalId, sessionsById);
+  const tree = buildProjectTree(
+    projects,
+    telemetryByTerminalId,
+    sessionsById,
+  ).projects;
 
   // Two projects in the tree
   assert.equal(tree.length, 2);
 
   // Preserve source order from project store
   assert.equal(tree[0].projectName, "idle-project");
-  assert.equal(tree[0].flat, true); // one worktree
+  assert.equal(tree[0].worktrees.length, 1);
 
   // active-project remains second
   assert.equal(tree[1].projectName, "active-project");
-  assert.equal(tree[1].flat, false); // two worktrees
   assert.equal(tree[1].worktrees.length, 2);
 });
 
@@ -380,11 +383,10 @@ test("buildProjectTree groups terminals under project/worktree with status summa
     createProjects(),
     telemetryByTerminalId,
     sessionsById,
-  );
+  ).projects;
 
   assert.equal(tree.length, 1);
   assert.equal(tree[0].projectName, "termcanvas");
-  assert.equal(tree[0].flat, true);
   assert.equal(tree[0].worktrees.length, 1);
 
   const wt = tree[0].worktrees[0];
