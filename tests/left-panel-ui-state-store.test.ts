@@ -193,3 +193,20 @@ test("prunes state for paths that no longer exist", async () => {
     },
   });
 });
+
+test("uses paths rather than runtime ids for session collapse state", async () => {
+  installLocalStorage();
+  const { useLeftPanelUiStateStore } = await loadFreshStore();
+
+  const store = useLeftPanelUiStateStore.getState();
+  store.toggleSessionProject("/repo");
+  store.toggleSessionWorktree("/repo/.worktrees/feature");
+
+  assert.equal(store.isSessionProjectCollapsed("/repo"), true);
+  assert.equal(store.isSessionProjectCollapsed("project-runtime-id"), false);
+  assert.equal(
+    store.isSessionWorktreeCollapsed("/repo/.worktrees/feature"),
+    true,
+  );
+  assert.equal(store.isSessionWorktreeCollapsed("worktree-runtime-id"), false);
+});
