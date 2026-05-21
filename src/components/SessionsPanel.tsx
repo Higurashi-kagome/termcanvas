@@ -14,6 +14,7 @@ import { SessionReplayView } from "./SessionReplayView";
 import { useT } from "../i18n/useT";
 import { useProjectStore } from "../stores/projectStore";
 import { useTerminalRuntimeStore } from "../terminal/terminalRuntimeStore";
+import { useLeftPanelUiStateStore } from "../stores/leftPanelUiStateStore";
 import { panToTerminal } from "../utils/panToTerminal";
 import {
   buildCanvasTerminalSections,
@@ -886,9 +887,11 @@ export function HistorySection({
   const [hidden, setHidden] = useState<Set<string>>(() => loadHiddenSessions());
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinnedSessions());
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  // Groups folded via the chevron header click.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    new Set(),
+  const isHistoryProjectCollapsed = useLeftPanelUiStateStore(
+    (s) => s.isHistoryProjectCollapsed,
+  );
+  const toggleHistoryProject = useLeftPanelUiStateStore(
+    (s) => s.toggleHistoryProject,
   );
   // Worktree groups default collapsed; expanding them is opt-in.
   const [expandedWorktreeGroups, setExpandedWorktreeGroups] = useState<
@@ -899,14 +902,12 @@ export function HistorySection({
     new Map(),
   );
 
-  const toggleGroup = useCallback((groupKey: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupKey)) next.delete(groupKey);
-      else next.add(groupKey);
-      return next;
-    });
-  }, []);
+  const toggleProjectGroup = useCallback(
+    (projectPath: string) => {
+      toggleHistoryProject(projectPath);
+    },
+    [toggleHistoryProject],
+  );
 
   const toggleWorktreeGroup = useCallback((worktreePath: string) => {
     setExpandedWorktreeGroups((prev) => {
@@ -1231,7 +1232,9 @@ export function HistorySection({
                 </div>
               )}
               {unpinnedGroups.map((group) => {
-                const isCollapsed = collapsedGroups.has(group.projectPath);
+                const isCollapsed = isHistoryProjectCollapsed(
+                  group.projectPath,
+                );
                 const limit =
                   groupLimits.get(group.projectPath) ??
                   HISTORY_GROUP_DEFAULT_LIMIT;
@@ -1242,7 +1245,7 @@ export function HistorySection({
                     <button
                       type="button"
                       className="tc-row-hover group/grp mx-2 flex min-h-[30px] items-center gap-1.5 rounded-md px-3 py-0 text-left cursor-pointer"
-                      onClick={() => toggleGroup(group.projectPath)}
+                      onClick={() => toggleProjectGroup(group.projectPath)}
                       title={group.projectPath}
                     >
                       <span className="shrink-0 flex items-center justify-center text-[var(--text-muted)]">

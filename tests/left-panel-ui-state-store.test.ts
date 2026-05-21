@@ -210,3 +210,27 @@ test("uses paths rather than runtime ids for session collapse state", async () =
   );
   assert.equal(store.isSessionWorktreeCollapsed("worktree-runtime-id"), false);
 });
+
+test("history persistence is limited to top-level project groups", async () => {
+  const { data } = installLocalStorage();
+  const {
+    LEFT_PANEL_UI_STATE_STORAGE_KEY,
+    useLeftPanelUiStateStore,
+  } = await loadFreshStore();
+
+  const store = useLeftPanelUiStateStore.getState();
+  store.toggleHistoryProject("/repo");
+
+  assert.equal(store.isHistoryProjectCollapsed("/repo"), true);
+  assert.equal(
+    store.isHistoryProjectCollapsed("/repo/.worktrees/feature"),
+    false,
+  );
+
+  const persisted = JSON.parse(
+    data.get(LEFT_PANEL_UI_STATE_STORAGE_KEY) ?? "{}",
+  );
+  assert.deepEqual(Object.keys(persisted.history), [
+    "projectCollapsedByPath",
+  ]);
+});
