@@ -1738,6 +1738,7 @@ export function SessionsPanel({
   const runtimeTerminals = useTerminalRuntimeStore((s) => s.terminals);
   const seenTerminalIds = useCompletionSeenStore((s) => s.seenTerminalIds);
   const markCompletionSeen = useCompletionSeenStore((s) => s.markSeen);
+  const pruneLeftPanelUiState = useLeftPanelUiStateStore((s) => s.prune);
   const t = useT();
   const [traceItems, setTraceItems] = useState<InspectorTraceItem[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
@@ -1799,6 +1800,34 @@ export function SessionsPanel({
       })),
     [projects],
   );
+  const sessionProjectPaths = useMemo(
+    () => projects.map((project) => project.path),
+    [projects],
+  );
+  const sessionWorktreePaths = useMemo(
+    () =>
+      projects.flatMap((project) =>
+        project.worktrees.map((worktree) => worktree.path),
+      ),
+    [projects],
+  );
+  const historyProjectPaths = useMemo(
+    () => historyScopeProjects.map((project) => project.projectPath),
+    [historyScopeProjects],
+  );
+
+  useEffect(() => {
+    pruneLeftPanelUiState({
+      sessionProjectPaths,
+      sessionWorktreePaths,
+      historyProjectPaths,
+    });
+  }, [
+    historyProjectPaths,
+    pruneLeftPanelUiState,
+    sessionProjectPaths,
+    sessionWorktreePaths,
+  ]);
 
   useEffect(() => {
     if (sections.focused?.state === "done") {
