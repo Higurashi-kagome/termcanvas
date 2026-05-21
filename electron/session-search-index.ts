@@ -94,6 +94,10 @@ const MAX_FILE_SIZE_FOR_INDEX = 20 * 1024 * 1024;
 const AVG_LINE_BYTES_ESTIMATE = 500;
 const FIRST_PROMPT_MAX_LENGTH = 200;
 
+interface SessionMetaHint {
+  projectDir: string | null;
+}
+
 function decodeClaudeEncodedPath(encoded: string): string {
   // Claude stores projects under `-Users-foo-bar`; decode back to
   // `/Users/foo/bar`. This is a lossy encoding — a project with an
@@ -359,6 +363,58 @@ function pickRealCodexText(content: unknown): string {
     if (cleaned) return cleaned;
   }
   return "";
+}
+
+async function readCodexSessionMetaHint(
+  candidate: SessionFileCandidate,
+): Promise<SessionMetaHint | null> {
+  try {
+    const file = await fsp.open(candidate.filePath, "r");
+    try {
+      if (candidate.size === 0) return null;
+      const buffer = Buffer.alloc(Math.min(candidate.size, 64 * 1024));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      const lines = buffer.toString("utf-8", 0, bytesRead).split("\n").slice(0, 20);
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let raw: Record<string, unknown>;
+        try {
+          raw = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (raw.type !== "session_meta") continue;
+        const payload =
+          raw.payload && typeof raw.payload === "object"
+            ? (raw.payload as Record<string, unknown>)
+            : null;
+        if (!payload) return null;
+
+        return {
+          projectDir: typeof payload.cwd === "string" ? payload.cwd : null,
+        };
+      }
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function matchesHistoryScope(
+  projectDir: string | null,
+  exactProjectSet: ReadonlySet<string>,
+  projectPathKeys: readonly string[],
+): boolean {
+  const entryPathKey = normalizeProjectPathForMatch(projectDir ?? "");
+  return (
+    exactProjectSet.has(entryPathKey) ||
+    findDeletedWorktreeProjectKey(entryPathKey, projectPathKeys) !== null
+  );
 }
 
 async function buildEntry(
@@ -694,6 +750,13 @@ async function listSessionsForHistoryScope(
 
   const results: SessionSearchEntry[] = [];
   for (const candidate of candidates) {
+    if (candidate.provider === "codex") {
+      const meta = await readCodexSessionMetaHint(candidate);
+      if (meta && !matchesHistoryScope(meta.projectDir, exactProjectSet, projectPathKeys)) {
+        continue;
+      }
+    }
+
     const built = await buildEntry(
       candidate.filePath,
       candidate.provider,
@@ -896,7 +959,7 @@ function resolveLatestActivity(
 
 function findDeletedWorktreeProjectKey(
   entryPathKey: string,
-  projectPathKeys: string[],
+  projectPathKeys: readonly string[],
 ): string | null {
   for (const projectPathKey of projectPathKeys) {
     if (getDeletedWorktreeProjectKey(entryPathKey, projectPathKey)) {

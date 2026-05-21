@@ -887,8 +887,8 @@ export function HistorySection({
   const [hidden, setHidden] = useState<Set<string>>(() => loadHiddenSessions());
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinnedSessions());
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const isHistoryProjectCollapsed = useLeftPanelUiStateStore(
-    (s) => s.isHistoryProjectCollapsed,
+  const historyProjectCollapsedByPath = useLeftPanelUiStateStore(
+    (s) => s.history.projectCollapsedByPath,
   );
   const toggleHistoryProject = useLeftPanelUiStateStore(
     (s) => s.toggleHistoryProject,
@@ -1232,9 +1232,8 @@ export function HistorySection({
                 </div>
               )}
               {unpinnedGroups.map((group) => {
-                const isCollapsed = isHistoryProjectCollapsed(
-                  group.projectPath,
-                );
+                const isCollapsed =
+                  historyProjectCollapsedByPath[group.projectPath] === true;
                 const limit =
                   groupLimits.get(group.projectPath) ??
                   HISTORY_GROUP_DEFAULT_LIMIT;

@@ -129,6 +129,97 @@ test("listSessionsForProjectsPaged applies the same normalized matching for code
   });
 });
 
+test("listSessionGroupsForScope avoids hydrating unrelated Codex JSONL files", async () => {
+  await withTempHome(async (homeDir) => {
+    const targetFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "21",
+      "target.jsonl",
+    );
+    const unrelatedFile = path.join(
+      homeDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "05",
+      "21",
+      "unrelated.jsonl",
+    );
+    writeJsonl(targetFile, [
+      {
+        timestamp: "2026-05-21T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "target-session",
+          cwd: "/repo",
+        },
+      },
+      {
+        timestamp: "2026-05-21T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "target prompt",
+        },
+      },
+    ]);
+    writeJsonl(unrelatedFile, [
+      {
+        timestamp: "2026-05-21T10:01:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "unrelated-session",
+          cwd: "/other",
+        },
+      },
+      {
+        timestamp: "2026-05-21T10:01:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "unrelated prompt",
+        },
+      },
+    ]);
+    const originalCreateReadStream = fs.createReadStream;
+    const hydratedPaths: string[] = [];
+    fs.createReadStream = ((filePath, options) => {
+      hydratedPaths.push(path.normalize(String(filePath)));
+      return originalCreateReadStream.call(fs, filePath, options);
+    }) as typeof fs.createReadStream;
+
+    try {
+      const groups = await listSessionGroupsForScope([
+        {
+          projectPath: "/repo",
+          worktreePaths: [],
+        },
+      ]);
+
+      assert.equal(groups.length, 1);
+      assert.deepEqual(
+        groups[0]?.projectTree?.roots.map((node) => node.sessionId),
+        ["target-session"],
+      );
+      assert.ok(
+        hydratedPaths.includes(path.normalize(targetFile)),
+        "target session should still be hydrated for display metadata",
+      );
+      assert.equal(
+        hydratedPaths.includes(path.normalize(unrelatedFile)),
+        false,
+        "unrelated Codex sessions should not be hydrated while opening history",
+      );
+    } finally {
+      fs.createReadStream = originalCreateReadStream;
+    }
+  });
+});
+
 test("listSessionTreesForProjects nests sessions only when the raw session contains a confirmed parent field", async () => {
   await withTempHome(async (homeDir) => {
     const rootFile = path.join(
