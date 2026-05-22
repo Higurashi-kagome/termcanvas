@@ -12,6 +12,9 @@ import {
 } from "../src/components/ProjectTree.tsx";
 import { en } from "../src/i18n/en.ts";
 import { useLocaleStore } from "../src/stores/localeStore.ts";
+import { useLeftPanelUiStateStore } from "../src/stores/leftPanelUiStateStore.ts";
+import { useProjectStore } from "../src/stores/projectStore.ts";
+import { useSelectionStore } from "../src/stores/selectionStore.ts";
 
 function installDom() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -37,6 +40,29 @@ function createProjectGroup(projectId: string, projectName: string) {
     statusSummary: { attention: 0, running: 0, freshDone: 0, done: 0, idle: 0 },
     worktrees: [],
   };
+}
+
+function resetPanelStores() {
+  useLeftPanelUiStateStore.setState({
+    version: 1,
+    sessions: {
+      projectCollapsedByPath: {},
+      worktreeCollapsedByPath: {},
+    },
+    history: {
+      projectCollapsedByPath: {},
+    },
+  });
+  useProjectStore.setState({
+    projects: [],
+    projectPanelOrder: { pinnedProjectIds: [], unpinnedProjectIds: [] },
+    focusedProjectId: null,
+    focusedWorktreeId: null,
+  });
+  useSelectionStore.setState({
+    selectedItems: [],
+    selectionRect: null,
+  });
 }
 
 test("ProjectTree renders the project pin button before the task button when projectPanelOrdering is enabled", async () => {
@@ -216,6 +242,188 @@ test("ProjectTree accepts the unified move callback in left panel ordering mode"
 
     assert.deepEqual(moves, []);
   } finally {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("clicking a collapsed project row expands it and eventually focuses its worktree", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+  resetPanelStores();
+  useLeftPanelUiStateStore.setState({
+    sessions: {
+      projectCollapsedByPath: {
+        "/tmp/project-1": true,
+      },
+      worktreeCollapsedByPath: {},
+    },
+  });
+
+  useProjectStore.setState({
+    projects: [
+      {
+        id: "project-1",
+        name: "Project One",
+        path: "/tmp/project-1",
+        worktrees: [
+          {
+            id: "worktree-1",
+            name: "main",
+            path: "/tmp/project-1",
+            terminals: [],
+            isPrimary: true,
+          },
+        ],
+      },
+    ],
+  });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+        />,
+      );
+    });
+
+    const row = Array.from(document.querySelectorAll('[role="button"]')).find(
+      (element) => element.textContent?.includes("Project One"),
+    ) as HTMLElement | undefined;
+    assert.ok(row, "project row should render");
+
+    await act(async () => {
+      row.click();
+    });
+
+    assert.equal(
+      useLeftPanelUiStateStore
+        .getState()
+        .isSessionProjectCollapsed("/tmp/project-1"),
+      false,
+    );
+    assert.equal(useProjectStore.getState().focusedProjectId, "project-1");
+    assert.equal(useProjectStore.getState().focusedWorktreeId, "worktree-1");
+    assert.deepEqual(useSelectionStore.getState().selectedItems, [
+      {
+        type: "worktree",
+        projectId: "project-1",
+        worktreeId: "worktree-1",
+      },
+    ]);
+  } finally {
+    resetPanelStores();
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("rapid clicks across collapsed projects only focus the last queued project", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+  resetPanelStores();
+  useLeftPanelUiStateStore.setState({
+    sessions: {
+      projectCollapsedByPath: {
+        "/tmp/project-1": true,
+        "/tmp/project-2": true,
+      },
+      worktreeCollapsedByPath: {},
+    },
+  });
+
+  useProjectStore.setState({
+    projects: [
+      {
+        id: "project-1",
+        name: "Project One",
+        path: "/tmp/project-1",
+        worktrees: [
+          {
+            id: "worktree-1",
+            name: "main",
+            path: "/tmp/project-1",
+            terminals: [],
+            isPrimary: true,
+          },
+        ],
+      },
+      {
+        id: "project-2",
+        name: "Project Two",
+        path: "/tmp/project-2",
+        worktrees: [
+          {
+            id: "worktree-2",
+            name: "main",
+            path: "/tmp/project-2",
+            terminals: [],
+            isPrimary: true,
+          },
+        ],
+      },
+    ],
+  });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[
+            createProjectGroup("project-1", "Project One"),
+            createProjectGroup("project-2", "Project Two"),
+          ]}
+          renderTerminal={() => null}
+        />,
+      );
+    });
+
+    const rows = Array.from(document.querySelectorAll('[role="button"]'));
+    const rowOne = rows.find((element) =>
+      element.textContent?.includes("Project One"),
+    ) as HTMLElement | undefined;
+    const rowTwo = rows.find((element) =>
+      element.textContent?.includes("Project Two"),
+    ) as HTMLElement | undefined;
+    assert.ok(rowOne, "project one row should render");
+    assert.ok(rowTwo, "project two row should render");
+
+    await act(async () => {
+      rowOne.click();
+      rowTwo.click();
+    });
+
+    assert.equal(useProjectStore.getState().focusedProjectId, "project-2");
+    assert.equal(useProjectStore.getState().focusedWorktreeId, "worktree-2");
+    assert.deepEqual(useSelectionStore.getState().selectedItems, [
+      {
+        type: "worktree",
+        projectId: "project-2",
+        worktreeId: "worktree-2",
+      },
+    ]);
+  } finally {
+    resetPanelStores();
     if (root) {
       await act(async () => {
         root.unmount();

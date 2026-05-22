@@ -499,6 +499,7 @@ function ProjectRow({
   project,
   renderTerminal,
   projectPanelOrdering,
+  deferProjectActivation,
 }: {
   project: ProjectGroup;
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
@@ -508,6 +509,7 @@ function ProjectRow({
     rowDragProps?: Record<string, unknown>;
     rowDropRef?: (element: HTMLDivElement | null) => void;
   };
+  deferProjectActivation: (projectId: string) => void;
 }) {
   const t = useT();
   const toggleSessionProject = useLeftPanelUiStateStore(
@@ -624,11 +626,12 @@ function ProjectRow({
         className="tc-row-hover group mx-2 min-h-[30px] flex items-center gap-1.5 rounded-md px-2 py-0 text-left cursor-pointer"
         {...(projectPanelOrdering?.rowDragProps ?? {})}
         onClick={() => {
-          // Match worktree rows: clicking anywhere on the project row should
-          // both focus it and toggle collapse, instead of forcing the user to
-          // aim for the small chevron.
-          handleActivate();
           toggleSessionProject(project.projectPath);
+          if (collapsed) {
+            deferProjectActivation(project.projectId);
+            return;
+          }
+          handleActivate();
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -878,10 +881,12 @@ function SortableProjectRow({
   project,
   renderTerminal,
   projectPanelOrdering,
+  deferProjectActivation,
 }: {
   project: ProjectGroup;
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
   projectPanelOrdering: ProjectPanelOrderingProps;
+  deferProjectActivation: (projectId: string) => void;
 }) {
   const sortable = useSortable({ id: project.projectId });
   const pinned = projectPanelOrdering.pinnedProjectIds.includes(
@@ -899,6 +904,7 @@ function SortableProjectRow({
       <ProjectRow
         project={project}
         renderTerminal={renderTerminal}
+        deferProjectActivation={deferProjectActivation}
         projectPanelOrdering={{
           pinned,
           onTogglePin: () => projectPanelOrdering.onTogglePin(project.projectId),
@@ -922,6 +928,43 @@ export function ProjectTree({
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
   projectPanelOrdering?: ProjectPanelOrderingProps;
 }) {
+  const pendingProjectActivationRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (
+        pendingProjectActivationRef.current !== null &&
+        typeof window !== "undefined"
+      ) {
+        window.clearTimeout(pendingProjectActivationRef.current);
+      }
+    };
+  }, []);
+
+  const deferProjectActivation = (projectId: string) => {
+    const activateProject = () => {
+      const liveProjects = useProjectStore.getState().projects;
+      const liveProject = liveProjects.find((p) => p.id === projectId);
+      const firstWorktree = liveProject?.worktrees[0];
+      if (!liveProject || !firstWorktree) return;
+      activateWorktreeInScene(liveProject.id, firstWorktree.id);
+    };
+
+    if (typeof window === "undefined") {
+      activateProject();
+      return;
+    }
+
+    if (pendingProjectActivationRef.current !== null) {
+      window.clearTimeout(pendingProjectActivationRef.current);
+    }
+
+    pendingProjectActivationRef.current = window.setTimeout(() => {
+      pendingProjectActivationRef.current = null;
+      activateProject();
+    }, 0);
+  };
+
   if (!projectPanelOrdering) {
     return (
       <div className="flex flex-col">
@@ -930,6 +973,7 @@ export function ProjectTree({
             key={project.projectId}
             project={project}
             renderTerminal={renderTerminal}
+            deferProjectActivation={deferProjectActivation}
           />
         ))}
       </div>
@@ -971,7 +1015,9 @@ export function ProjectTree({
       activationConstraint: { distance: 6 },
     }),
   );
-  const collisionDetection: CollisionDetection = (args) =>
+  const collisionDetection: CollisionDetection = (
+    args: Parameters<typeof rectIntersection>[0],
+  ) =>
     preferProjectRowCollisions(rectIntersection(args), projectIds);
   const lastResolvedTargetRef = useRef<{
     activeId: string;
@@ -1116,6 +1162,7 @@ export function ProjectTree({
                 project={project}
                 renderTerminal={renderTerminal}
                 projectPanelOrdering={projectPanelOrdering}
+                deferProjectActivation={deferProjectActivation}
               />
             ))}
           </SortableContext>
@@ -1139,6 +1186,7 @@ export function ProjectTree({
                 project={project}
                 renderTerminal={renderTerminal}
                 projectPanelOrdering={projectPanelOrdering}
+                deferProjectActivation={deferProjectActivation}
               />
             ))}
           </SortableContext>
