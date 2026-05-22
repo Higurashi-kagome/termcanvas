@@ -160,7 +160,7 @@ test("removeProject prunes the removed id from projectPanelOrder", () => {
   });
 });
 
-test("pin, unpin, reorder, and boundary moves mark the workspace dirty", () => {
+test("pin, unpin, reorder, and cross-group moves mark the workspace dirty", () => {
   resetStoresWithOrder([createProject(), createSecondProject()], {
     pinnedProjectIds: [],
     unpinnedProjectIds: ["project-1", "project-2"],
@@ -173,11 +173,11 @@ test("pin, unpin, reorder, and boundary moves mark the workspace dirty", () => {
     .reorderProjectPanelGroup("unpinned", "project-2", 0);
   useProjectStore
     .getState()
-    .moveProjectPanelItemToBoundary("project-2", "pinned");
+    .moveProjectPanelItem("project-2", "pinned", 0);
 
   assert.equal(useWorkspaceStore.getState().dirty, true);
   assert.deepEqual(useProjectStore.getState().projectPanelOrder, {
-    pinnedProjectIds: [],
-    unpinnedProjectIds: ["project-2", "project-1"],
+    pinnedProjectIds: ["project-2"],
+    unpinnedProjectIds: ["project-1"],
   });
 });

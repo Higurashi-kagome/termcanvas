@@ -330,29 +330,15 @@ export function LeftPanel() {
     }
   }, []);
 
-  const handleReorderPinnedProject = useCallback(
-    (projectId: string, targetIndex: number) => {
+  const handleMoveProject = useCallback(
+    (
+      projectId: string,
+      targetGroup: "pinned" | "unpinned",
+      targetIndex: number,
+    ) => {
       useProjectStore
         .getState()
-        .reorderProjectPanelGroup("pinned", projectId, targetIndex);
-    },
-    [],
-  );
-
-  const handleReorderUnpinnedProject = useCallback(
-    (projectId: string, targetIndex: number) => {
-      useProjectStore
-        .getState()
-        .reorderProjectPanelGroup("unpinned", projectId, targetIndex);
-    },
-    [],
-  );
-
-  const handleProjectBoundaryDrop = useCallback(
-    (projectId: string, hoveredGroup: "pinned" | "unpinned") => {
-      useProjectStore
-        .getState()
-        .moveProjectPanelItemToBoundary(projectId, hoveredGroup);
+        .moveProjectPanelItem(projectId, targetGroup, targetIndex);
     },
     [],
   );
@@ -508,9 +494,7 @@ export function LeftPanel() {
                     projectPanelOrdering={{
                       pinnedProjectIds: projectPanelOrder.pinnedProjectIds,
                       onTogglePin: handleToggleProjectPin,
-                      onReorderPinned: handleReorderPinnedProject,
-                      onReorderUnpinned: handleReorderUnpinnedProject,
-                      onBoundaryDrop: handleProjectBoundaryDrop,
+                      onMove: handleMoveProject,
                     }}
                   />
                   {!hasAnyProjects && (

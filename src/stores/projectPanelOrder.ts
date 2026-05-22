@@ -121,32 +121,32 @@ export function reorderProjectPanelGroup(
   };
 }
 
-export function moveProjectPanelItemToBoundary(
+export function moveProjectPanelItem(
   order: ProjectPanelOrderState,
   projectId: string,
-  hoveredGroup: ProjectPanelGroup,
+  targetGroup: ProjectPanelGroup,
+  targetIndex: number,
 ): ProjectPanelOrderState {
   const isPinned = order.pinnedProjectIds.includes(projectId);
+  const currentGroup: ProjectPanelGroup = isPinned ? "pinned" : "unpinned";
 
-  if (!isPinned && hoveredGroup === "pinned") {
+  if (currentGroup === targetGroup) {
+    return reorderProjectPanelGroup(order, targetGroup, projectId, targetIndex);
+  }
+
+  if (targetGroup === "pinned") {
     return {
-      ...order,
-      unpinnedProjectIds: [
-        projectId,
-        ...removeId(order.unpinnedProjectIds, projectId),
-      ],
+      pinnedProjectIds: insertAt(order.pinnedProjectIds, projectId, targetIndex),
+      unpinnedProjectIds: removeId(order.unpinnedProjectIds, projectId),
     };
   }
 
-  if (isPinned && hoveredGroup === "unpinned") {
-    return {
-      ...order,
-      pinnedProjectIds: [
-        ...removeId(order.pinnedProjectIds, projectId),
-        projectId,
-      ],
-    };
-  }
-
-  return order;
+  return {
+    pinnedProjectIds: removeId(order.pinnedProjectIds, projectId),
+    unpinnedProjectIds: insertAt(
+      order.unpinnedProjectIds,
+      projectId,
+      targetIndex,
+    ),
+  };
 }

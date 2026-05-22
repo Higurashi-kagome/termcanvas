@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import {
   ProjectTree,
+  getProjectPinIconStyle,
   preferProjectRowCollisions,
   toProjectRowTranslateTransform,
 } from "../src/components/ProjectTree.tsx";
@@ -59,9 +60,7 @@ test("ProjectTree renders the project pin button before the task button when pro
             onTogglePin(projectId) {
               toggled.push(projectId);
             },
-            onReorderPinned() {},
-            onReorderUnpinned() {},
-            onBoundaryDrop() {},
+            onMove() {},
           }}
         />,
       );
@@ -172,4 +171,56 @@ test("preferProjectRowCollisions falls back to original collisions when no proje
     preferProjectRowCollisions(collisions, new Set(["project-1"])),
     collisions,
   );
+});
+
+test("getProjectPinIconStyle uses a tilted icon for unpinned projects and leaves pinned projects upright", () => {
+  assert.equal(getProjectPinIconStyle(true), undefined);
+  assert.deepEqual(getProjectPinIconStyle(false), {
+    transform: "rotate(28deg)",
+  });
+});
+
+test("ProjectTree accepts the unified move callback in left panel ordering mode", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  const moves: Array<{
+    projectId: string;
+    targetGroup: "pinned" | "unpinned";
+    targetIndex: number;
+  }> = [];
+  useLocaleStore.setState({ locale: "en" });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[
+            createProjectGroup("project-1", "Project One"),
+            createProjectGroup("project-2", "Project Two"),
+          ]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: ["project-1"],
+            onTogglePin() {},
+            onMove(projectId, targetGroup, targetIndex) {
+              moves.push({ projectId, targetGroup, targetIndex });
+            },
+          }}
+        />,
+      );
+    });
+
+    assert.deepEqual(moves, []);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
 });

@@ -10,6 +10,7 @@ import {
   useSensors,
   type Collision,
   type CollisionDetection,
+  type DragOverEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
@@ -42,11 +43,10 @@ const UNPINNED_DROP_ZONE_ID = "project-panel-unpinned";
 interface ProjectPanelOrderingProps {
   pinnedProjectIds: readonly string[];
   onTogglePin: (projectId: string) => void;
-  onReorderPinned: (projectId: string, targetIndex: number) => void;
-  onReorderUnpinned: (projectId: string, targetIndex: number) => void;
-  onBoundaryDrop: (
+  onMove: (
     projectId: string,
-    hoveredGroup: "pinned" | "unpinned",
+    targetGroup: "pinned" | "unpinned",
+    targetIndex: number,
   ) => void;
 }
 
@@ -69,6 +69,36 @@ export function preferProjectRowCollisions(
   return projectRowCollisions.length > 0
     ? projectRowCollisions
     : [...collisions];
+}
+
+export function getProjectPinIconStyle(
+  pinned: boolean,
+): React.CSSProperties | undefined {
+  if (pinned) {
+    return undefined;
+  }
+
+  return {
+    transform: "rotate(28deg)",
+  };
+}
+
+function findProjectPanelItemPosition(
+  projectId: string,
+  pinnedIds: readonly string[],
+  unpinnedIds: readonly string[],
+): { group: "pinned" | "unpinned"; index: number } | null {
+  const pinnedIndex = pinnedIds.indexOf(projectId);
+  if (pinnedIndex !== -1) {
+    return { group: "pinned", index: pinnedIndex };
+  }
+
+  const unpinnedIndex = unpinnedIds.indexOf(projectId);
+  if (unpinnedIndex !== -1) {
+    return { group: "unpinned", index: unpinnedIndex };
+  }
+
+  return null;
 }
 
 function PlusIcon() {
@@ -476,6 +506,7 @@ function ProjectRow({
     pinned: boolean;
     onTogglePin: () => void;
     rowDragProps?: Record<string, unknown>;
+    rowDropRef?: (element: HTMLDivElement | null) => void;
   };
 }) {
   const t = useT();
@@ -589,6 +620,7 @@ function ProjectRow({
       <div
         role="button"
         tabIndex={0}
+        ref={projectPanelOrdering?.rowDropRef}
         className="tc-row-hover group mx-2 min-h-[30px] flex items-center gap-1.5 rounded-md px-2 py-0 text-left cursor-pointer"
         {...(projectPanelOrdering?.rowDragProps ?? {})}
         onClick={() => {
@@ -649,7 +681,7 @@ function ProjectRow({
             }
             className={`transition-opacity hover:text-[var(--pin)] hover:bg-[var(--pin-soft)] ${
               projectPanelOrdering.pinned
-                ? "opacity-100 text-[var(--pin)] bg-[var(--pin-soft)]"
+                ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 : "opacity-0 group-hover:opacity-100"
             }`}
             onClick={(e) => {
@@ -660,7 +692,10 @@ function ProjectRow({
               e.stopPropagation();
             }}
           >
-            <Pin size={12} />
+            <Pin
+              size={12}
+              style={getProjectPinIconStyle(projectPanelOrdering.pinned)}
+            />
           </IconButton>
         )}
         <div className="relative flex items-center">
@@ -855,7 +890,7 @@ function SortableProjectRow({
 
   return (
     <div
-      ref={sortable.setNodeRef}
+      ref={sortable.setDraggableNodeRef}
       style={{
         transform: toProjectRowTranslateTransform(sortable.transform),
         transition: sortable.transition,
@@ -867,6 +902,7 @@ function SortableProjectRow({
         projectPanelOrdering={{
           pinned,
           onTogglePin: () => projectPanelOrdering.onTogglePin(project.projectId),
+          rowDropRef: sortable.setDroppableNodeRef,
           rowDragProps: {
             ...sortable.attributes,
             ...sortable.listeners,
@@ -900,13 +936,35 @@ export function ProjectTree({
     );
   }
 
-  const pinnedSet = new Set(projectPanelOrdering.pinnedProjectIds);
-  const pinnedProjects = projects.filter((project) =>
-    pinnedSet.has(project.projectId),
+  const basePinnedIds = projects
+    .filter((project) =>
+      projectPanelOrdering.pinnedProjectIds.includes(project.projectId),
+    )
+    .map((project) => project.projectId);
+  const baseUnpinnedIds = projects
+    .filter(
+      (project) =>
+        !projectPanelOrdering.pinnedProjectIds.includes(project.projectId),
+    )
+    .map((project) => project.projectId);
+  const [dragPreview, setDragPreview] = useState<{
+    pinnedIds: string[];
+    unpinnedIds: string[];
+  } | null>(null);
+  const pinnedIds = dragPreview?.pinnedIds ?? basePinnedIds;
+  const unpinnedIds = dragPreview?.unpinnedIds ?? baseUnpinnedIds;
+  const groupsById = new Map(
+    projects.map((project) => [project.projectId, project] as const),
   );
-  const unpinnedProjects = projects.filter(
-    (project) => !pinnedSet.has(project.projectId),
-  );
+  const pinnedSet = new Set(pinnedIds);
+  const pinnedProjects = pinnedIds.flatMap((projectId) => {
+    const project = groupsById.get(projectId);
+    return project ? [project] : [];
+  });
+  const unpinnedProjects = unpinnedIds.flatMap((projectId) => {
+    const project = groupsById.get(projectId);
+    return project ? [project] : [];
+  });
   const projectIds = new Set(projects.map((project) => project.projectId));
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -915,6 +973,11 @@ export function ProjectTree({
   );
   const collisionDetection: CollisionDetection = (args) =>
     preferProjectRowCollisions(rectIntersection(args), projectIds);
+  const lastResolvedTargetRef = useRef<{
+    activeId: string;
+    targetGroup: "pinned" | "unpinned";
+    targetIndex: number;
+  } | null>(null);
 
   const resolveDropIndex = (
     items: ProjectGroup[],
@@ -928,36 +991,105 @@ export function ProjectTree({
     return index === -1 ? items.length : index;
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const activeId = String(event.active.id);
-    const overId = event.over ? String(event.over.id) : null;
-    if (!overId || activeId === overId) {
-      return;
+  const buildPreviewState = (
+    activeId: string,
+    targetGroup: "pinned" | "unpinned",
+    targetIndex: number,
+  ) => {
+    const nextPinnedIds = pinnedIds.filter((projectId) => projectId !== activeId);
+    const nextUnpinnedIds = unpinnedIds.filter(
+      (projectId) => projectId !== activeId,
+    );
+
+    if (targetGroup === "pinned") {
+      nextPinnedIds.splice(
+        Math.max(0, Math.min(targetIndex, nextPinnedIds.length)),
+        0,
+        activeId,
+      );
+    } else {
+      nextUnpinnedIds.splice(
+        Math.max(0, Math.min(targetIndex, nextUnpinnedIds.length)),
+        0,
+        activeId,
+      );
     }
 
-    const activePinned = pinnedSet.has(activeId);
-    const hoveredGroup =
+    return {
+      pinnedIds: nextPinnedIds,
+      unpinnedIds: nextUnpinnedIds,
+    };
+  };
+
+  const resolveTarget = (
+    _activeId: string,
+    overId: string,
+  ): { targetGroup: "pinned" | "unpinned"; targetIndex: number } => {
+    const targetGroup: "pinned" | "unpinned" =
       overId === PINNED_DROP_ZONE_ID || pinnedSet.has(overId)
         ? "pinned"
         : "unpinned";
+    const targetItems =
+      targetGroup === "pinned" ? pinnedProjects : unpinnedProjects;
+    const targetContainerId =
+      targetGroup === "pinned" ? PINNED_DROP_ZONE_ID : UNPINNED_DROP_ZONE_ID;
+    return {
+      targetGroup,
+      targetIndex: resolveDropIndex(targetItems, overId, targetContainerId),
+    };
+  };
 
-    if (activePinned && hoveredGroup === "pinned") {
-      projectPanelOrdering.onReorderPinned(
-        activeId,
-        resolveDropIndex(pinnedProjects, overId, PINNED_DROP_ZONE_ID),
-      );
+  const handleDragOver = (event: DragOverEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    if (!overId) {
       return;
     }
 
-    if (!activePinned && hoveredGroup === "unpinned") {
-      projectPanelOrdering.onReorderUnpinned(
-        activeId,
-        resolveDropIndex(unpinnedProjects, overId, UNPINNED_DROP_ZONE_ID),
-      );
+    const { targetGroup, targetIndex } = resolveTarget(activeId, overId);
+    lastResolvedTargetRef.current = {
+      activeId,
+      targetGroup,
+      targetIndex,
+    };
+    setDragPreview(buildPreviewState(activeId, targetGroup, targetIndex));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    const previewTarget =
+      lastResolvedTargetRef.current?.activeId === activeId
+        ? lastResolvedTargetRef.current
+        : null;
+    lastResolvedTargetRef.current = null;
+    setDragPreview(null);
+    if (!overId) {
       return;
     }
 
-    projectPanelOrdering.onBoundaryDrop(activeId, hoveredGroup);
+    const { targetGroup, targetIndex } =
+      overId === activeId && previewTarget
+        ? previewTarget
+        : resolveTarget(activeId, overId);
+    const originalPosition = findProjectPanelItemPosition(
+      activeId,
+      basePinnedIds,
+      baseUnpinnedIds,
+    );
+    if (
+      originalPosition &&
+      originalPosition.group === targetGroup &&
+      originalPosition.index === targetIndex
+    ) {
+      return;
+    }
+    projectPanelOrdering.onMove(activeId, targetGroup, targetIndex);
+  };
+
+  const handleDragCancel = () => {
+    lastResolvedTargetRef.current = null;
+    setDragPreview(null);
   };
 
   return (
@@ -965,7 +1097,9 @@ export function ProjectTree({
       collisionDetection={collisionDetection}
       sensors={sensors}
       modifiers={[restrictToVerticalAxis]}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="flex flex-col">
         <ProjectGroupDropZone

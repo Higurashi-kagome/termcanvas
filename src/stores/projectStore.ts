@@ -39,7 +39,7 @@ import { resolveCollisions } from "../canvas/collisionResolver.ts";
 import { normalizePathForComparison } from "../../shared/path-comparison.ts";
 import {
   EMPTY_PROJECT_PANEL_ORDER,
-  moveProjectPanelItemToBoundary as moveProjectPanelItemToBoundaryState,
+  moveProjectPanelItem as moveProjectPanelItemState,
   normalizeProjectPanelOrder,
   pinProjectPanelItem,
   reorderProjectPanelGroup as reorderProjectPanelGroupState,
@@ -61,9 +61,10 @@ interface ProjectStore {
     projectId: string,
     newIndex: number,
   ) => void;
-  moveProjectPanelItemToBoundary: (
+  moveProjectPanelItem: (
     projectId: string,
-    hoveredGroup: "pinned" | "unpinned",
+    targetGroup: "pinned" | "unpinned",
+    targetIndex: number,
   ) => void;
 
   removeWorktree: (projectId: string, worktreeId: string) => void;
@@ -637,12 +638,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     markDirty();
   },
 
-  moveProjectPanelItemToBoundary: (projectId, hoveredGroup) => {
+  moveProjectPanelItem: (projectId, targetGroup, targetIndex) => {
     set((state) => ({
-      projectPanelOrder: moveProjectPanelItemToBoundaryState(
+      projectPanelOrder: moveProjectPanelItemState(
         state.projectPanelOrder,
         projectId,
-        hoveredGroup,
+        targetGroup,
+        targetIndex,
       ),
     }));
     markDirty();

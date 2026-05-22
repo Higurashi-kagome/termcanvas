@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   EMPTY_PROJECT_PANEL_ORDER,
-  moveProjectPanelItemToBoundary,
+  moveProjectPanelItem,
   normalizeProjectPanelOrder,
   orderProjectIdsForPanel,
   pinProjectPanelItem,
@@ -64,33 +64,35 @@ test("reorderProjectPanelGroup only reorders inside the requested group", () => 
   });
 });
 
-test("moveProjectPanelItemToBoundary keeps the item in its original group and snaps to the correct boundary", () => {
-  const moveUnpinnedAcrossPinned = moveProjectPanelItemToBoundary(
+test("moveProjectPanelItem moves items across groups and inserts at the requested index", () => {
+  const moveUnpinnedAcrossPinned = moveProjectPanelItem(
     {
       pinnedProjectIds: ["project-2", "project-3"],
       unpinnedProjectIds: ["project-1", "project-4"],
     },
     "project-4",
     "pinned",
+    1,
   );
 
   assert.deepEqual(moveUnpinnedAcrossPinned, {
-    pinnedProjectIds: ["project-2", "project-3"],
-    unpinnedProjectIds: ["project-4", "project-1"],
+    pinnedProjectIds: ["project-2", "project-4", "project-3"],
+    unpinnedProjectIds: ["project-1"],
   });
 
-  const movePinnedAcrossUnpinned = moveProjectPanelItemToBoundary(
+  const movePinnedAcrossUnpinned = moveProjectPanelItem(
     {
       pinnedProjectIds: ["project-2", "project-3"],
       unpinnedProjectIds: ["project-1", "project-4"],
     },
     "project-2",
     "unpinned",
+    1,
   );
 
   assert.deepEqual(movePinnedAcrossUnpinned, {
-    pinnedProjectIds: ["project-3", "project-2"],
-    unpinnedProjectIds: ["project-1", "project-4"],
+    pinnedProjectIds: ["project-3"],
+    unpinnedProjectIds: ["project-1", "project-2", "project-4"],
   });
 });
 
