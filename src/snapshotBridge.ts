@@ -3,6 +3,7 @@ import type {
   PersistedProjectData,
   PersistedStashedTerminal,
   ProjectData,
+  ProjectPanelOrderState,
   StashedTerminal,
   TerminalOrigin,
   TerminalStatus,
@@ -22,6 +23,7 @@ import {
   sceneDocumentToLegacyState,
 } from "./canvas/sceneProjection";
 import { clusterByTag } from "./clustering";
+import { normalizeProjectPanelOrder } from "./stores/projectPanelOrder";
 
 export interface LegacyWorkspaceSnapshot {
   version: 1;
@@ -30,6 +32,7 @@ export interface LegacyWorkspaceSnapshot {
   drawings: ReturnType<typeof useDrawingStore.getState>["elements"];
   browserCards: ReturnType<typeof useBrowserCardStore.getState>["cards"];
   stashedTerminals?: PersistedStashedTerminal[];
+  projectPanelOrder?: ProjectPanelOrderState;
 }
 
 export interface SceneWorkspaceSnapshot {
@@ -571,6 +574,27 @@ function normalizeStashedTerminals(raw: unknown): StashedTerminal[] {
   });
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function normalizeSceneProjectPanelOrder(
+  value: unknown,
+  projectIds: readonly string[],
+): ProjectPanelOrderState {
+  const record = isRecord(value) ? value : {};
+  return normalizeProjectPanelOrder(
+    {
+      pinnedProjectIds: normalizeStringArray(record.pinnedProjectIds),
+      unpinnedProjectIds: normalizeStringArray(record.unpinnedProjectIds),
+    },
+    projectIds,
+  );
+}
+
 function coerceSceneDocument(value: unknown): SceneDocument | null {
   if (!isRecord(value)) {
     return null;
@@ -594,6 +618,11 @@ function coerceSceneDocument(value: unknown): SceneDocument | null {
   if (!projects) {
     return null;
   }
+
+  const projectPanelOrder = normalizeSceneProjectPanelOrder(
+    record.projectPanelOrder,
+    projects.map((project) => project.id),
+  );
 
   const annotations = Array.isArray(record.annotations)
     ? record.annotations.flatMap((annotation) => {
@@ -620,6 +649,7 @@ function coerceSceneDocument(value: unknown): SceneDocument | null {
         ? (record.browserCards as SceneDocument["browserCards"])
         : {},
     annotations,
+    projectPanelOrder,
     ...(stashedTerminals.length > 0 ? { stashedTerminals } : {}),
   };
 }
@@ -711,6 +741,9 @@ function legacySnapshotFromScene(
     projects: normalizeProjectsFocus(legacyState.projects).projects,
     drawings: legacyState.drawings,
     browserCards: legacyState.browserCards,
+    ...(scene.projectPanelOrder
+      ? { projectPanelOrder: scene.projectPanelOrder }
+      : {}),
     ...(scene.stashedTerminals && scene.stashedTerminals.length > 0
       ? { stashedTerminals: scene.stashedTerminals }
       : {}),

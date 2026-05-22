@@ -1,4 +1,8 @@
-import type { PersistedProjectData, PersistedStashedTerminal } from "./index";
+import type {
+  PersistedProjectData,
+  PersistedStashedTerminal,
+  ProjectPanelOrderState,
+} from "./index";
 import type { BrowserCardData } from "../stores/browserCardStore";
 
 export interface ScenePoint {
@@ -104,6 +108,7 @@ export interface SceneDocument {
   browserCards: Record<string, BrowserCardData>;
   annotations: AnnotationElement[];
   stashedTerminals?: PersistedStashedTerminal[];
+  projectPanelOrder?: ProjectPanelOrderState;
 }
 
 export interface SceneRuntime {

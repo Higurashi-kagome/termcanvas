@@ -205,6 +205,11 @@ export interface PersistedProjectData extends Omit<ProjectData, "worktrees"> {
   worktrees: PersistedWorktreeData[];
 }
 
+export interface ProjectPanelOrderState {
+  pinnedProjectIds: string[];
+  unpinnedProjectIds: string[];
+}
+
 export interface CanvasState {
   version?: 1;
   viewport: Viewport;

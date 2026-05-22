@@ -731,6 +731,8 @@ export const en = {
   panel_project_remove_confirm_with_terminals: (name: string, count: number) =>
     `Remove project "${name}"? This will close ${count} terminal${count === 1 ? "" : "s"}. Files on disk will not be deleted.`,
   panel_project_removed: (name: string) => `Project "${name}" removed`,
+  panel_project_pin: (projectName: string) => `Pin ${projectName}`,
+  panel_project_unpin: (projectName: string) => `Unpin ${projectName}`,
   panel_project_delete_title: "Delete project from disk?",
   panel_project_delete_intro: "This will permanently delete the folder",
   panel_project_delete_warning:

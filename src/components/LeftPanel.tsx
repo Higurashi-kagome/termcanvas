@@ -15,7 +15,11 @@ import {
 } from "../utils/panelAnimation";
 import type { LeftPanelTab } from "../stores/canvasStore";
 import { promptAndAddProjectToScene } from "../canvas/sceneCommands";
-import { buildProjectTree, type CanvasTerminalItem } from "./sessionPanelModel";
+import {
+  buildProjectTree,
+  orderProjectGroupsForPanel,
+  type CanvasTerminalItem,
+} from "./sessionPanelModel";
 import { ProjectTree } from "./ProjectTree";
 import { TerminalCard, HistorySection, StashedSection } from "./SessionsPanel";
 import { PinDrawer } from "./PinDrawer";
@@ -86,6 +90,7 @@ export function LeftPanel() {
   const setActiveTab = useCanvasStore((s) => s.setLeftPanelActiveTab);
 
   const projects = useProjectStore((s) => s.projects);
+  const projectPanelOrder = useProjectStore((s) => s.projectPanelOrder);
   const runtimeTerminals = useTerminalRuntimeStore((s) => s.terminals);
   const liveSessions = useSessionStore((s) => s.liveSessions);
   const historySessions = useSessionStore((s) => s.historySessions);
@@ -137,7 +142,14 @@ export function LeftPanel() {
       ),
     [projects, telemetryByTerminalId, sessionsById, seenTerminalIds],
   );
-  const projectTree = projectTreeResult.projects;
+  const projectTree = useMemo(
+    () =>
+      orderProjectGroupsForPanel(
+        projectTreeResult.projects,
+        projectPanelOrder,
+      ),
+    [projectTreeResult.projects, projectPanelOrder],
+  );
   const stashedItems = projectTreeResult.stashed;
   const hasAnyProjects = projectTree.length > 0;
 
@@ -308,6 +320,29 @@ export function LeftPanel() {
     [t, seenTerminalIds],
   );
 
+  const handleToggleProjectPin = useCallback((projectId: string) => {
+    const store = useProjectStore.getState();
+    const pinned = store.projectPanelOrder.pinnedProjectIds.includes(projectId);
+    if (pinned) {
+      store.unpinProjectInPanel(projectId);
+    } else {
+      store.pinProjectInPanel(projectId);
+    }
+  }, []);
+
+  const handleMoveProject = useCallback(
+    (
+      projectId: string,
+      targetGroup: "pinned" | "unpinned",
+      targetIndex: number,
+    ) => {
+      useProjectStore
+        .getState()
+        .moveProjectPanelItem(projectId, targetGroup, targetIndex);
+    },
+    [],
+  );
+
   return (
     <>
       <PinDrawer />
@@ -456,6 +491,11 @@ export function LeftPanel() {
                   <ProjectTree
                     projects={projectTree}
                     renderTerminal={renderTerminal}
+                    projectPanelOrdering={{
+                      pinnedProjectIds: projectPanelOrder.pinnedProjectIds,
+                      onTogglePin: handleToggleProjectPin,
+                      onMove: handleMoveProject,
+                    }}
                   />
                   {!hasAnyProjects && (
                     <div className="tc-label flex-1 px-4 py-6 text-center">
