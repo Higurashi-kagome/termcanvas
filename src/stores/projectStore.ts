@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   ProjectData,
+  ProjectPanelOrderState,
   WorktreeData,
   TerminalData,
   TerminalType,
@@ -36,14 +37,34 @@ import { usePinStore } from "./pinStore.ts";
 import { destroyTerminalRuntime } from "../terminal/terminalRuntimeStore.ts";
 import { resolveCollisions } from "../canvas/collisionResolver.ts";
 import { normalizePathForComparison } from "../../shared/path-comparison.ts";
+import {
+  EMPTY_PROJECT_PANEL_ORDER,
+  moveProjectPanelItemToBoundary as moveProjectPanelItemToBoundaryState,
+  normalizeProjectPanelOrder,
+  pinProjectPanelItem,
+  reorderProjectPanelGroup as reorderProjectPanelGroupState,
+  unpinProjectPanelItem,
+} from "./projectPanelOrder.ts";
 
 interface ProjectStore {
   projects: ProjectData[];
+  projectPanelOrder: ProjectPanelOrderState;
   focusedProjectId: string | null;
   focusedWorktreeId: string | null;
 
   addProject: (project: ProjectData) => void;
   removeProject: (projectId: string) => void;
+  pinProjectInPanel: (projectId: string) => void;
+  unpinProjectInPanel: (projectId: string) => void;
+  reorderProjectPanelGroup: (
+    group: "pinned" | "unpinned",
+    projectId: string,
+    newIndex: number,
+  ) => void;
+  moveProjectPanelItemToBoundary: (
+    projectId: string,
+    hoveredGroup: "pinned" | "unpinned",
+  ) => void;
 
   removeWorktree: (projectId: string, worktreeId: string) => void;
   syncWorktrees: (
@@ -534,13 +555,21 @@ function expandFocusedWorktreeAncestors(
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: [],
+  projectPanelOrder: EMPTY_PROJECT_PANEL_ORDER,
   focusedProjectId: null,
   focusedWorktreeId: null,
 
   addProject: (project) => {
-    set((state) => ({
-      projects: [...state.projects, project],
-    }));
+    set((state) => {
+      const projects = [...state.projects, project];
+      return {
+        projects,
+        projectPanelOrder: normalizeProjectPanelOrder(
+          state.projectPanelOrder,
+          projects.map((entry) => entry.id),
+        ),
+      };
+    });
     markDirty();
   },
 
@@ -569,9 +598,53 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         focusedProjectId: nextFocus.focusedProjectId,
         focusedWorktreeId: nextFocus.focusedWorktreeId,
         projects: nextFocus.projects,
+        projectPanelOrder: normalizeProjectPanelOrder(
+          state.projectPanelOrder,
+          nextFocus.projects.map((project) => project.id),
+        ),
       };
     });
     cleanupRemovedTerminalIds(removedTerminalIds);
+    markDirty();
+  },
+
+  pinProjectInPanel: (projectId) => {
+    set((state) => ({
+      projectPanelOrder: pinProjectPanelItem(state.projectPanelOrder, projectId),
+    }));
+    markDirty();
+  },
+
+  unpinProjectInPanel: (projectId) => {
+    set((state) => ({
+      projectPanelOrder: unpinProjectPanelItem(
+        state.projectPanelOrder,
+        projectId,
+      ),
+    }));
+    markDirty();
+  },
+
+  reorderProjectPanelGroup: (group, projectId, newIndex) => {
+    set((state) => ({
+      projectPanelOrder: reorderProjectPanelGroupState(
+        state.projectPanelOrder,
+        group,
+        projectId,
+        newIndex,
+      ),
+    }));
+    markDirty();
+  },
+
+  moveProjectPanelItemToBoundary: (projectId, hoveredGroup) => {
+    set((state) => ({
+      projectPanelOrder: moveProjectPanelItemToBoundaryState(
+        state.projectPanelOrder,
+        projectId,
+        hoveredGroup,
+      ),
+    }));
     markDirty();
   },
 
@@ -1213,7 +1286,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setProjects: (projects) => {
-    set(() => normalizeProjectsFocus(projects));
+    set((state) => {
+      const normalized = normalizeProjectsFocus(projects);
+      return {
+        ...normalized,
+        projectPanelOrder: normalizeProjectPanelOrder(
+          state.projectPanelOrder,
+          normalized.projects.map((project) => project.id),
+        ),
+      };
+    });
     markDirty();
   },
 }));

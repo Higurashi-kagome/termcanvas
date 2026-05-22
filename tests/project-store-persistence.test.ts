@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import { useProjectStore } from "../src/stores/projectStore.ts";
 import { useWorkspaceStore } from "../src/stores/workspaceStore.ts";
-import type { ProjectData } from "../src/types/index.ts";
+import type {
+  ProjectData,
+  ProjectPanelOrderState,
+} from "../src/types/index.ts";
 
 function createProject(): ProjectData {
   return {
@@ -39,6 +42,44 @@ function createProject(): ProjectData {
 function resetStores(projects: ProjectData[]) {
   useProjectStore.setState({
     projects,
+    projectPanelOrder: {
+      pinnedProjectIds: [],
+      unpinnedProjectIds: projects.map((project) => project.id),
+    },
+    focusedProjectId: null,
+    focusedWorktreeId: null,
+  });
+  useWorkspaceStore.setState({
+    workspacePath: null,
+    dirty: false,
+    lastSavedAt: null,
+    lastDirtyAt: null,
+  });
+}
+
+function createSecondProject(): ProjectData {
+  return {
+    id: "project-2",
+    name: "Project Two",
+    path: "/tmp/project-2",
+    worktrees: [
+      {
+        id: "worktree-2",
+        name: "main",
+        path: "/tmp/project-2",
+        terminals: [],
+      },
+    ],
+  };
+}
+
+function resetStoresWithOrder(
+  projects: ProjectData[],
+  projectPanelOrder: ProjectPanelOrderState,
+) {
+  useProjectStore.setState({
+    projects,
+    projectPanelOrder,
     focusedProjectId: null,
     focusedWorktreeId: null,
   });
@@ -89,4 +130,54 @@ test("updateTerminalType marks the workspace dirty", () => {
     useProjectStore.getState().projects[0]?.worktrees[0]?.terminals[0]?.type,
     "codex",
   );
+});
+
+test("addProject appends the new project id to the unpinned tail", () => {
+  resetStoresWithOrder([createProject()], {
+    pinnedProjectIds: [],
+    unpinnedProjectIds: ["project-1"],
+  });
+
+  useProjectStore.getState().addProject(createSecondProject());
+
+  assert.deepEqual(useProjectStore.getState().projectPanelOrder, {
+    pinnedProjectIds: [],
+    unpinnedProjectIds: ["project-1", "project-2"],
+  });
+});
+
+test("removeProject prunes the removed id from projectPanelOrder", () => {
+  resetStoresWithOrder([createProject(), createSecondProject()], {
+    pinnedProjectIds: ["project-2"],
+    unpinnedProjectIds: ["project-1"],
+  });
+
+  useProjectStore.getState().removeProject("project-2");
+
+  assert.deepEqual(useProjectStore.getState().projectPanelOrder, {
+    pinnedProjectIds: [],
+    unpinnedProjectIds: ["project-1"],
+  });
+});
+
+test("pin, unpin, reorder, and boundary moves mark the workspace dirty", () => {
+  resetStoresWithOrder([createProject(), createSecondProject()], {
+    pinnedProjectIds: [],
+    unpinnedProjectIds: ["project-1", "project-2"],
+  });
+
+  useProjectStore.getState().pinProjectInPanel("project-1");
+  useProjectStore.getState().unpinProjectInPanel("project-1");
+  useProjectStore
+    .getState()
+    .reorderProjectPanelGroup("unpinned", "project-2", 0);
+  useProjectStore
+    .getState()
+    .moveProjectPanelItemToBoundary("project-2", "pinned");
+
+  assert.equal(useWorkspaceStore.getState().dirty, true);
+  assert.deepEqual(useProjectStore.getState().projectPanelOrder, {
+    pinnedProjectIds: [],
+    unpinnedProjectIds: ["project-2", "project-1"],
+  });
 });

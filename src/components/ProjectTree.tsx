@@ -1,6 +1,24 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  rectIntersection,
+  DndContext,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type Collision,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { Pin } from "lucide-react";
 import { useLeftPanelUiStateStore } from "../stores/leftPanelUiStateStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useNotificationStore } from "../stores/notificationStore";
@@ -17,6 +35,41 @@ import type {
   WorktreeGroup,
   CanvasTerminalItem,
 } from "./sessionPanelModel";
+
+const PINNED_DROP_ZONE_ID = "project-panel-pinned";
+const UNPINNED_DROP_ZONE_ID = "project-panel-unpinned";
+
+interface ProjectPanelOrderingProps {
+  pinnedProjectIds: readonly string[];
+  onTogglePin: (projectId: string) => void;
+  onReorderPinned: (projectId: string, targetIndex: number) => void;
+  onReorderUnpinned: (projectId: string, targetIndex: number) => void;
+  onBoundaryDrop: (
+    projectId: string,
+    hoveredGroup: "pinned" | "unpinned",
+  ) => void;
+}
+
+export function toProjectRowTranslateTransform(
+  transform: { x: number; y: number } | null | undefined,
+): string | undefined {
+  if (!transform) {
+    return undefined;
+  }
+  return `translate3d(${transform.x}px, ${transform.y}px, 0)`;
+}
+
+export function preferProjectRowCollisions(
+  collisions: readonly Collision[],
+  projectIds: ReadonlySet<string>,
+): Collision[] {
+  const projectRowCollisions = collisions.filter((collision) =>
+    projectIds.has(String(collision.id)),
+  );
+  return projectRowCollisions.length > 0
+    ? projectRowCollisions
+    : [...collisions];
+}
 
 function PlusIcon() {
   return (
@@ -415,9 +468,15 @@ function ListTodoIcon() {
 function ProjectRow({
   project,
   renderTerminal,
+  projectPanelOrdering,
 }: {
   project: ProjectGroup;
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
+  projectPanelOrdering?: {
+    pinned: boolean;
+    onTogglePin: () => void;
+    rowDragProps?: Record<string, unknown>;
+  };
 }) {
   const t = useT();
   const toggleSessionProject = useLeftPanelUiStateStore(
@@ -531,6 +590,7 @@ function ProjectRow({
         role="button"
         tabIndex={0}
         className="tc-row-hover group mx-2 min-h-[30px] flex items-center gap-1.5 rounded-md px-2 py-0 text-left cursor-pointer"
+        {...(projectPanelOrdering?.rowDragProps ?? {})}
         onClick={() => {
           // Match worktree rows: clicking anywhere on the project row should
           // both focus it and toggle collapse, instead of forcing the user to
@@ -578,6 +638,31 @@ function ProjectRow({
           {project.projectName}
         </span>
         <StatusBadges summary={project.statusSummary} />
+        {projectPanelOrdering && (
+          <IconButton
+            size="sm"
+            tone="neutral"
+            label={
+              projectPanelOrdering.pinned
+                ? t.panel_project_unpin(project.projectName)
+                : t.panel_project_pin(project.projectName)
+            }
+            className={`transition-opacity hover:text-[var(--pin)] hover:bg-[var(--pin-soft)] ${
+              projectPanelOrdering.pinned
+                ? "opacity-100 text-[var(--pin)] bg-[var(--pin-soft)]"
+                : "opacity-0 group-hover:opacity-100"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              projectPanelOrdering.onTogglePin();
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            <Pin size={12} />
+          </IconButton>
+        )}
         <div className="relative flex items-center">
           <IconButton
             size="sm"
@@ -587,6 +672,11 @@ function ProjectRow({
             onClick={(e) => {
               e.stopPropagation();
               taskToggle(project.projectPath);
+            }}
+            onPointerDown={(e) => {
+              if (projectPanelOrdering) {
+                e.stopPropagation();
+              }
             }}
           >
             <ListTodoIcon />
@@ -609,6 +699,11 @@ function ProjectRow({
               store.toggleSessionProject(project.projectPath);
             }
             setCreating(true);
+          }}
+          onPointerDown={(e) => {
+            if (projectPanelOrdering) {
+              e.stopPropagation();
+            }
           }}
         >
           <PlusIcon />
@@ -727,22 +822,194 @@ function ProjectRow({
   );
 }
 
+function ProjectGroupDropZone({
+  id,
+  empty,
+  children,
+}: {
+  id: string;
+  empty: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className={empty ? "min-h-2" : undefined}>
+      {children}
+    </div>
+  );
+}
+
+function SortableProjectRow({
+  project,
+  renderTerminal,
+  projectPanelOrdering,
+}: {
+  project: ProjectGroup;
+  renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
+  projectPanelOrdering: ProjectPanelOrderingProps;
+}) {
+  const sortable = useSortable({ id: project.projectId });
+  const pinned = projectPanelOrdering.pinnedProjectIds.includes(
+    project.projectId,
+  );
+
+  return (
+    <div
+      ref={sortable.setNodeRef}
+      style={{
+        transform: toProjectRowTranslateTransform(sortable.transform),
+        transition: sortable.transition,
+      }}
+    >
+      <ProjectRow
+        project={project}
+        renderTerminal={renderTerminal}
+        projectPanelOrdering={{
+          pinned,
+          onTogglePin: () => projectPanelOrdering.onTogglePin(project.projectId),
+          rowDragProps: {
+            ...sortable.attributes,
+            ...sortable.listeners,
+          },
+        }}
+      />
+    </div>
+  );
+}
+
 export function ProjectTree({
   projects,
   renderTerminal,
+  projectPanelOrdering,
 }: {
   projects: ProjectGroup[];
   renderTerminal: (item: CanvasTerminalItem) => React.ReactNode;
+  projectPanelOrdering?: ProjectPanelOrderingProps;
 }) {
+  if (!projectPanelOrdering) {
+    return (
+      <div className="flex flex-col">
+        {projects.map((project) => (
+          <ProjectRow
+            key={project.projectId}
+            project={project}
+            renderTerminal={renderTerminal}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const pinnedSet = new Set(projectPanelOrdering.pinnedProjectIds);
+  const pinnedProjects = projects.filter((project) =>
+    pinnedSet.has(project.projectId),
+  );
+  const unpinnedProjects = projects.filter(
+    (project) => !pinnedSet.has(project.projectId),
+  );
+  const projectIds = new Set(projects.map((project) => project.projectId));
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+  );
+  const collisionDetection: CollisionDetection = (args) =>
+    preferProjectRowCollisions(rectIntersection(args), projectIds);
+
+  const resolveDropIndex = (
+    items: ProjectGroup[],
+    overId: string,
+    containerId: string,
+  ) => {
+    if (overId === containerId) {
+      return items.length;
+    }
+    const index = items.findIndex((project) => project.projectId === overId);
+    return index === -1 ? items.length : index;
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    if (!overId || activeId === overId) {
+      return;
+    }
+
+    const activePinned = pinnedSet.has(activeId);
+    const hoveredGroup =
+      overId === PINNED_DROP_ZONE_ID || pinnedSet.has(overId)
+        ? "pinned"
+        : "unpinned";
+
+    if (activePinned && hoveredGroup === "pinned") {
+      projectPanelOrdering.onReorderPinned(
+        activeId,
+        resolveDropIndex(pinnedProjects, overId, PINNED_DROP_ZONE_ID),
+      );
+      return;
+    }
+
+    if (!activePinned && hoveredGroup === "unpinned") {
+      projectPanelOrdering.onReorderUnpinned(
+        activeId,
+        resolveDropIndex(unpinnedProjects, overId, UNPINNED_DROP_ZONE_ID),
+      );
+      return;
+    }
+
+    projectPanelOrdering.onBoundaryDrop(activeId, hoveredGroup);
+  };
+
   return (
-    <div className="flex flex-col">
-      {projects.map((project) => (
-        <ProjectRow
-          key={project.projectId}
-          project={project}
-          renderTerminal={renderTerminal}
-        />
-      ))}
-    </div>
+    <DndContext
+      collisionDetection={collisionDetection}
+      sensors={sensors}
+      modifiers={[restrictToVerticalAxis]}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex flex-col">
+        <ProjectGroupDropZone
+          id={PINNED_DROP_ZONE_ID}
+          empty={pinnedProjects.length === 0}
+        >
+          <SortableContext
+            items={pinnedProjects.map((project) => project.projectId)}
+            strategy={verticalListSortingStrategy}
+          >
+            {pinnedProjects.map((project) => (
+              <SortableProjectRow
+                key={project.projectId}
+                project={project}
+                renderTerminal={renderTerminal}
+                projectPanelOrdering={projectPanelOrdering}
+              />
+            ))}
+          </SortableContext>
+        </ProjectGroupDropZone>
+
+        {pinnedProjects.length > 0 && unpinnedProjects.length > 0 && (
+          <div className="mx-2 my-1 h-px bg-[var(--border)] opacity-60" />
+        )}
+
+        <ProjectGroupDropZone
+          id={UNPINNED_DROP_ZONE_ID}
+          empty={unpinnedProjects.length === 0}
+        >
+          <SortableContext
+            items={unpinnedProjects.map((project) => project.projectId)}
+            strategy={verticalListSortingStrategy}
+          >
+            {unpinnedProjects.map((project) => (
+              <SortableProjectRow
+                key={project.projectId}
+                project={project}
+                renderTerminal={renderTerminal}
+                projectPanelOrdering={projectPanelOrdering}
+              />
+            ))}
+          </SortableContext>
+        </ProjectGroupDropZone>
+      </div>
+    </DndContext>
   );
 }

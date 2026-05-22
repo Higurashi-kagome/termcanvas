@@ -1,7 +1,12 @@
 import type { SessionInfo } from "../../shared/sessions";
 import type { TerminalTelemetrySnapshot } from "../../shared/telemetry";
 import { resolveTerminalWithRuntimeState } from "../stores/terminalRuntimeStateStore";
-import type { ProjectData, TerminalData } from "../types/index.ts";
+import { orderProjectIdsForPanel } from "../stores/projectPanelOrder.ts";
+import type {
+  ProjectData,
+  ProjectPanelOrderState,
+  TerminalData,
+} from "../types/index.ts";
 
 // Three real states. "active" collapses what was "running" + "thinking":
 // from the user's POV both are "agent is working, no need to look", so
@@ -600,4 +605,20 @@ export function buildCanvasTerminalSections(
     done,
     idle,
   };
+}
+
+export function orderProjectGroupsForPanel(
+  projects: ProjectGroup[],
+  projectPanelOrder: ProjectPanelOrderState,
+): ProjectGroup[] {
+  const ids = projects.map((project) => project.projectId);
+  const orderedIds = orderProjectIdsForPanel(ids, projectPanelOrder);
+  const groupsById = new Map(
+    projects.map((project) => [project.projectId, project] as const),
+  );
+
+  return orderedIds.flatMap((projectId) => {
+    const group = groupsById.get(projectId);
+    return group ? [group] : [];
+  });
 }

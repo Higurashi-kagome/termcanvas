@@ -629,3 +629,61 @@ test("buildSnapshotState keeps stashed terminals in the project tree without dup
   assert.equal(terminal?.stashed, true);
   assert.equal(terminal?.stashedAt, 123);
 });
+
+test("buildSnapshotState persists projectPanelOrder with the active scene", async () => {
+  const { buildSnapshotState } = await loadSnapshotRuntimeState("snapshot-project-panel-order");
+  const { useBrowserCardStore } = await import("../src/stores/browserCardStore.ts");
+  const { useCanvasStore } = await import("../src/stores/canvasStore.ts");
+  const { useDrawingStore } = await import("../src/stores/drawingStore.ts");
+  const { useProjectStore } = await import("../src/stores/projectStore.ts");
+
+  useCanvasStore.setState({ viewport: { x: 0, y: 0, scale: 1 } });
+  useDrawingStore.setState({ activeElement: null, elements: [] });
+  useBrowserCardStore.setState({ cards: {} });
+  useProjectStore.setState({
+    focusedProjectId: null,
+    focusedWorktreeId: null,
+    projectPanelOrder: {
+      pinnedProjectIds: ["project-2"],
+      unpinnedProjectIds: ["project-1"],
+    },
+    projects: [
+      {
+        id: "project-1",
+        name: "Project One",
+        path: "/tmp/project-1",
+        worktrees: [
+          {
+            id: "worktree-1",
+            name: "main",
+            path: "/tmp/project-1",
+            terminals: [],
+          },
+        ],
+      },
+      {
+        id: "project-2",
+        name: "Project Two",
+        path: "/tmp/project-2",
+        worktrees: [
+          {
+            id: "worktree-2",
+            name: "main",
+            path: "/tmp/project-2",
+            terminals: [],
+          },
+        ],
+      },
+    ],
+  });
+
+  const snapshot = buildSnapshotState();
+  assert.deepEqual(snapshot.scene.projectPanelOrder, {
+    pinnedProjectIds: ["project-2"],
+    unpinnedProjectIds: ["project-1"],
+  });
+  assert.deepEqual(
+    snapshot.workspace.canvases[0]?.scene.projectPanelOrder,
+    snapshot.scene.projectPanelOrder,
+  );
+});

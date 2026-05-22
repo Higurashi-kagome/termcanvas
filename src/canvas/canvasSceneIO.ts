@@ -29,6 +29,7 @@ import {
 } from "../terminal/terminalRuntimeStore";
 import { clearTerminalGeometryRegistry } from "../terminal/terminalGeometryRegistry";
 import { normalizeProjectsFocus } from "../stores/projectFocus";
+import { normalizeProjectPanelOrder } from "../stores/projectPanelOrder";
 import {
   buildSceneDocument,
   sceneDocumentToLegacyState,
@@ -119,15 +120,17 @@ function deriveStashItemsFromProjects(
  */
 export function captureLiveCanvasScene(): SceneDocument {
   const scrollbacks = serializeAllTerminalRuntimeBuffers();
-  const projects = useProjectStore.getState().projects.map((project) =>
+  const { projects, projectPanelOrder } = useProjectStore.getState();
+  const persistedProjects = projects.map((project) =>
     toPersistedProjectData(project, scrollbacks),
   );
 
   return buildSceneDocument({
     viewport: useCanvasStore.getState().viewport,
-    projects,
+    projects: persistedProjects,
     drawings: useDrawingStore.getState().elements,
     browserCards: useBrowserCardStore.getState().cards,
+    projectPanelOrder,
   });
 }
 
@@ -142,12 +145,20 @@ export function applyCanvasSceneToLive(scene: SceneDocument) {
     restored.projects,
     restored.stashedTerminals,
   );
+  const normalizedFocus = normalizeProjectsFocus(restoredProjects);
+  const projectPanelOrder = normalizeProjectPanelOrder(
+    scene.projectPanelOrder,
+    normalizedFocus.projects.map((project) => project.id),
+  );
   destroyAllTerminalRuntimes();
   useTerminalRuntimeStateStore.getState().reset();
   clearTerminalGeometryRegistry();
   clearSceneSelection();
   useCanvasStore.getState().restoreViewport(restored.viewport);
-  useProjectStore.setState(normalizeProjectsFocus(restoredProjects));
+  useProjectStore.setState({
+    ...normalizedFocus,
+    projectPanelOrder,
+  });
   useDrawingStore.setState({ elements: restored.drawings });
   restoreBrowserCardsInScene(restored.browserCards);
   useStashStore

@@ -716,6 +716,8 @@ export const zh = {
   panel_project_remove_confirm_with_terminals: (name: string, count: number) =>
     `要从面板移除项目 "${name}" 吗?这会关闭 ${count} 个终端。磁盘上的文件不会被删除。`,
   panel_project_removed: (name: string) => `已移除项目 "${name}"`,
+  panel_project_pin: (projectName: string) => `置顶${projectName}`,
+  panel_project_unpin: (projectName: string) => `取消置顶${projectName}`,
   panel_project_delete_title: "要从磁盘删除项目吗?",
   panel_project_delete_intro: "将永久删除以下目录",
   panel_project_delete_warning:

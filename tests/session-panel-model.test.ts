@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildCanvasTerminalSections,
   buildProjectTree,
+  orderProjectGroupsForPanel,
 } from "../src/components/sessionPanelModel.ts";
 import type { ProjectGroup } from "../src/components/sessionPanelModel.ts";
 import type { SessionInfo } from "../shared/sessions.ts";
@@ -404,4 +405,44 @@ test("buildProjectTree groups terminals under project/worktree with status summa
   assert.equal(tree[0].statusSummary.attention, 0);
   assert.equal(tree[0].statusSummary.running, 2);
   assert.equal(tree[0].statusSummary.idle, 1);
+});
+
+test("orderProjectGroupsForPanel only reorders the provided groups for left panel rendering", () => {
+  const groups = [
+    {
+      projectId: "project-1",
+      projectName: "one",
+      projectPath: "/tmp/one",
+      statusSummary: { attention: 0, running: 0, freshDone: 0, done: 0, idle: 0 },
+      worktrees: [],
+    },
+    {
+      projectId: "project-2",
+      projectName: "two",
+      projectPath: "/tmp/two",
+      statusSummary: { attention: 0, running: 0, freshDone: 0, done: 0, idle: 0 },
+      worktrees: [],
+    },
+    {
+      projectId: "project-3",
+      projectName: "three",
+      projectPath: "/tmp/three",
+      statusSummary: { attention: 0, running: 0, freshDone: 0, done: 0, idle: 0 },
+      worktrees: [],
+    },
+  ] satisfies ProjectGroup[];
+
+  const ordered = orderProjectGroupsForPanel(groups, {
+    pinnedProjectIds: ["project-3"],
+    unpinnedProjectIds: ["project-2", "project-1"],
+  });
+
+  assert.deepEqual(
+    ordered.map((group) => group.projectId),
+    ["project-3", "project-2", "project-1"],
+  );
+  assert.deepEqual(
+    groups.map((group) => group.projectId),
+    ["project-1", "project-2", "project-3"],
+  );
 });
