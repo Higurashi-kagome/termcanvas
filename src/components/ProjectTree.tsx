@@ -653,7 +653,7 @@ function ProjectRow({
           type="button"
           aria-label={collapsed ? "Expand" : "Collapse"}
           aria-expanded={!collapsed}
-          className="tc-row-icon shrink-0 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"
+          className="tc-row-icon relative z-10 shrink-0 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"
           onClick={(e) => {
             e.stopPropagation();
             toggleSessionProject(project.projectPath);
@@ -662,7 +662,7 @@ function ProjectRow({
           <ChevronIcon open={!collapsed} />
         </button>
         <span
-          className="truncate flex-1 min-w-0"
+          className="truncate flex-1 min-w-0 select-none"
           style={{
             fontSize: "var(--text-base)",
             fontWeight: "var(--weight-medium)",

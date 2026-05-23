@@ -42,6 +42,27 @@ function createProjectGroup(projectId: string, projectName: string) {
   };
 }
 
+function createLiveProject(projectId: string, projectName: string) {
+  const worktreeId = projectId.startsWith("project-")
+    ? projectId.replace("project-", "worktree-")
+    : `${projectId}-worktree`;
+
+  return {
+    id: projectId,
+    name: projectName,
+    path: `/tmp/${projectId}`,
+    worktrees: [
+      {
+        id: worktreeId,
+        name: "main",
+        path: `/tmp/${projectId}`,
+        terminals: [],
+        isPrimary: true,
+      },
+    ],
+  };
+}
+
 function resetPanelStores() {
   useLeftPanelUiStateStore.setState({
     version: 1,
@@ -118,6 +139,46 @@ test("ProjectTree renders the project pin button before the task button when pro
     });
 
     assert.deepEqual(toggled, ["project-1"]);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("ProjectTree does not render a dedicated reorder handle in ordering mode", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: [],
+            onTogglePin() {},
+            onMove() {},
+          }}
+        />,
+      );
+    });
+
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const reorderHandle = buttons.find((button) =>
+      button.getAttribute("aria-label")?.includes("Reorder"),
+    );
+
+    assert.equal(reorderHandle ?? null, null);
   } finally {
     if (root) {
       await act(async () => {
@@ -266,22 +327,7 @@ test("clicking a collapsed project row expands it and eventually focuses its wor
   });
 
   useProjectStore.setState({
-    projects: [
-      {
-        id: "project-1",
-        name: "Project One",
-        path: "/tmp/project-1",
-        worktrees: [
-          {
-            id: "worktree-1",
-            name: "main",
-            path: "/tmp/project-1",
-            terminals: [],
-            isPrimary: true,
-          },
-        ],
-      },
-    ],
+    projects: [createLiveProject("project-1", "Project One")],
   });
 
   try {
@@ -333,6 +379,219 @@ test("clicking a collapsed project row expands it and eventually focuses its wor
   }
 });
 
+test("clicking the project title still expands a collapsed project in ordering mode", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+  resetPanelStores();
+  useLeftPanelUiStateStore.setState({
+    sessions: {
+      projectCollapsedByPath: {
+        "/tmp/project-1": true,
+      },
+      worktreeCollapsedByPath: {},
+    },
+  });
+  useProjectStore.setState({
+    projects: [createLiveProject("project-1", "Project One")],
+  });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: [],
+            onTogglePin() {},
+            onMove() {},
+          }}
+        />,
+      );
+    });
+
+    const title = Array.from(document.querySelectorAll("span")).find(
+      (element) => element.textContent === "Project One",
+    ) as HTMLElement | undefined;
+    assert.ok(title, "title span should render");
+
+    await act(async () => {
+      title.click();
+    });
+
+    assert.equal(
+      useLeftPanelUiStateStore
+        .getState()
+        .isSessionProjectCollapsed("/tmp/project-1"),
+      false,
+    );
+  } finally {
+    resetPanelStores();
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("project title text is not selectable in ordering mode", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+  resetPanelStores();
+  useLeftPanelUiStateStore.setState({
+    sessions: {
+      projectCollapsedByPath: {
+        "/tmp/project-1": true,
+      },
+      worktreeCollapsedByPath: {},
+    },
+  });
+  useProjectStore.setState({
+    projects: [createLiveProject("project-1", "Project One")],
+  });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: [],
+            onTogglePin() {},
+            onMove() {},
+          }}
+        />,
+      );
+    });
+
+    const title = Array.from(document.querySelectorAll("span")).find(
+      (element) => element.textContent === "Project One",
+    ) as HTMLElement | undefined;
+    assert.ok(title, "title span should render");
+    assert.ok(title.className.includes("select-none"));
+  } finally {
+    resetPanelStores();
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("clicking the project pin button still toggles pinning after handle refactor", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  const toggled: string[] = [];
+  useLocaleStore.setState({ locale: "en" });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: [],
+            onTogglePin(projectId) {
+              toggled.push(projectId);
+            },
+            onMove() {},
+          }}
+        />,
+      );
+    });
+
+    const pinButton = Array.from(document.querySelectorAll("button")).find(
+      (button) =>
+        button.getAttribute("aria-label") === en.panel_project_pin("Project One"),
+    ) as HTMLButtonElement | undefined;
+    assert.ok(pinButton);
+
+    await act(async () => {
+      pinButton.click();
+    });
+
+    assert.deepEqual(toggled, ["project-1"]);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("the project title text stays directly after the chevron button in ordering mode", async () => {
+  const dom = installDom();
+  let root: Root | null = null;
+  useLocaleStore.setState({ locale: "en" });
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ProjectTree
+          projects={[createProjectGroup("project-1", "Project One")]}
+          renderTerminal={() => null}
+          projectPanelOrdering={{
+            pinnedProjectIds: [],
+            onTogglePin() {},
+            onMove() {},
+          }}
+        />,
+      );
+    });
+
+    const row = Array.from(document.querySelectorAll('[role="button"]')).find(
+      (element) => element.textContent?.includes("Project One"),
+    ) as HTMLElement | undefined;
+    assert.ok(row, "project row should render");
+
+    const children = Array.from(row.children);
+    const titleIndex = children.findIndex(
+      (child) => child.textContent === "Project One",
+    );
+    const chevronIndex = children.findIndex(
+      (child) =>
+        child.tagName === "BUTTON" &&
+        child.hasAttribute("aria-expanded"),
+    );
+
+    assert.equal(chevronIndex >= 0, true, "chevron button should render");
+    assert.equal(titleIndex, chevronIndex + 1);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
 test("rapid clicks across collapsed projects only focus the last queued project", async () => {
   const dom = installDom();
   let root: Root | null = null;
@@ -350,34 +609,8 @@ test("rapid clicks across collapsed projects only focus the last queued project"
 
   useProjectStore.setState({
     projects: [
-      {
-        id: "project-1",
-        name: "Project One",
-        path: "/tmp/project-1",
-        worktrees: [
-          {
-            id: "worktree-1",
-            name: "main",
-            path: "/tmp/project-1",
-            terminals: [],
-            isPrimary: true,
-          },
-        ],
-      },
-      {
-        id: "project-2",
-        name: "Project Two",
-        path: "/tmp/project-2",
-        worktrees: [
-          {
-            id: "worktree-2",
-            name: "main",
-            path: "/tmp/project-2",
-            terminals: [],
-            isPrimary: true,
-          },
-        ],
-      },
+      createLiveProject("project-1", "Project One"),
+      createLiveProject("project-2", "Project Two"),
     ],
   });
 
