@@ -491,11 +491,13 @@ function CopyMessageButton({ text, label }: { text: string; label: string }) {
 function UserPrompt({
   event,
   isCurrent,
-  onClick,
+  promptId,
+  highlighted,
 }: {
   event: TimelineEvent;
   isCurrent: boolean;
-  onClick: () => void;
+  promptId: string;
+  highlighted: boolean;
 }) {
   // Right-aligned neutral bubble, iMessage-style. The bubble +
   // alignment ARE the speaker mark — no glyph, no eyebrow, no avatar,
@@ -521,23 +523,28 @@ function UserPrompt({
   return (
     <div className="flex justify-end">
       <div className="flex flex-col items-end max-w-[78%] min-w-0">
-        <button
-          type="button"
-          onClick={onClick}
+        <div
+          id={promptId}
           data-current={isCurrent || undefined}
-          className="rounded-xl px-3 py-2 text-left cursor-pointer transition-colors min-w-0 max-w-full overflow-hidden"
+          data-highlighted={highlighted || undefined}
+          className="rounded-xl px-3 py-2 text-left transition-colors min-w-0 max-w-full overflow-hidden select-text"
           style={{
-            backgroundColor: "var(--bubble-bg)",
-            border: "1px solid transparent",
+            backgroundColor: highlighted
+              ? "color-mix(in srgb, var(--accent) 12%, var(--bubble-bg))"
+              : "var(--bubble-bg)",
+            border: highlighted
+              ? "1px solid color-mix(in srgb, var(--accent) 45%, transparent)"
+              : "1px solid transparent",
           }}
         >
           <div
-            className={markdownClassName}
+            data-testid="session-replay-user-prompt-text"
+            className={`${markdownClassName} select-text`}
             dangerouslySetInnerHTML={{
               __html: renderMarkdown(event.textPreview),
             }}
           />
-        </button>
+        </div>
         <div className="mt-1 flex items-center gap-1.5">
           <CopyMessageButton text={event.textPreview} label="Copy prompt" />
           <span
@@ -558,7 +565,6 @@ function UserPrompt({
 function AssistantTextRow({
   event,
   isCurrent,
-  onClick,
   onFork,
   forkLabel,
   forkClaudeLabel,
@@ -566,7 +572,6 @@ function AssistantTextRow({
 }: {
   event: TimelineEvent;
   isCurrent: boolean;
-  onClick: () => void;
   /** When provided, a muted fork button sits at the bottom-right of
    *  the row (always visible, brightens on hover). Hovering opens a
    *  menu with one option per supported target provider; clicking an
@@ -580,26 +585,22 @@ function AssistantTextRow({
 }) {
   return (
     <div className="group relative">
-      <button
-        type="button"
-        className="block w-full text-left"
-        onClick={onClick}
-        data-current={isCurrent || undefined}
-      >
-        <div className="relative pl-5 pr-3 py-1 transition-colors">
-          <span
-            aria-hidden
-            className={ROW_RAIL_CLS}
-            style={{ backgroundColor: railColor(isCurrent) }}
-          />
-          <div
-            className={markdownClassName}
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdown(event.textPreview),
-            }}
-          />
-        </div>
-      </button>
+      <div data-current={isCurrent || undefined}>
+        <div className="relative pl-5 pr-3 py-1 transition-colors select-text">
+        <span
+          aria-hidden
+          className={ROW_RAIL_CLS}
+          style={{ backgroundColor: railColor(isCurrent) }}
+        />
+        <div
+          data-testid="session-replay-assistant-text"
+          className={`${markdownClassName} select-text`}
+          dangerouslySetInnerHTML={{
+            __html: renderMarkdown(event.textPreview),
+          }}
+        />
+      </div>
+      </div>
       <div className="absolute right-3 bottom-1 flex items-center gap-1">
         <CopyMessageButton text={event.textPreview} label="Copy reply" />
         {onFork && (
@@ -1078,11 +1079,9 @@ function WorkingFold({
 function ErrorRow({
   event,
   isCurrent,
-  onClick,
 }: {
   event: TimelineEvent;
   isCurrent: boolean;
-  onClick: () => void;
 }) {
   // Errors are rare and semantically different — the row breaks the
   // "no fills" rule on purpose. The fill itself reads "this went wrong"
@@ -1090,13 +1089,9 @@ function ErrorRow({
   // The current-event rail is always-red here so the accent rail
   // doesn't fight the error semantic.
   return (
-    <button
-      className="block w-full text-left"
-      onClick={onClick}
-      data-current={isCurrent || undefined}
-    >
+    <div data-current={isCurrent || undefined}>
       <div
-        className="relative pl-5 pr-3 py-1.5 transition-colors rounded-sm"
+        className="relative pl-5 pr-3 py-1.5 transition-colors rounded-sm select-text"
         style={{ backgroundColor: "var(--red-soft)" }}
       >
         <span
@@ -1105,7 +1100,7 @@ function ErrorRow({
           style={{ backgroundColor: "var(--red)" }}
         />
         <div
-          className="whitespace-pre-wrap break-words"
+          className="whitespace-pre-wrap break-words select-text"
           style={{
             fontSize: "var(--text-xs)",
             lineHeight: "var(--leading-normal)",
@@ -1115,7 +1110,7 @@ function ErrorRow({
           {event.textPreview}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1469,7 +1464,6 @@ export function SessionReplayView() {
                     <AssistantTextRow
                       event={node.primary}
                       isCurrent={isCurrent}
-                      onClick={() => seekTo(node.index)}
                       onFork={forkProps?.onFork}
                       forkLabel={forkProps?.forkLabel}
                       forkClaudeLabel={forkProps?.forkClaudeLabel}
@@ -1493,11 +1487,7 @@ export function SessionReplayView() {
               if (node.type === "error") {
                 return (
                   <div key={node.index} ref={attachRef}>
-                    <ErrorRow
-                      event={node.primary}
-                      isCurrent={isCurrent}
-                      onClick={() => seekTo(node.index)}
-                    />
+                    <ErrorRow event={node.primary} isCurrent={isCurrent} />
                   </div>
                 );
               }
@@ -1564,7 +1554,8 @@ export function SessionReplayView() {
                   <UserPrompt
                     event={turn.userEvent}
                     isCurrent={turn.userEvent.index === currentIndex}
-                    onClick={() => seekTo(turn.userEvent!.index)}
+                    promptId={`prompt-${turn.userEvent.index}`}
+                    highlighted={false}
                   />
                 </div>
                 {(hasFold || answer) && (
