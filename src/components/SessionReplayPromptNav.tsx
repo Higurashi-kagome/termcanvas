@@ -70,7 +70,10 @@ export function PromptJumpNav({
 
   if (mode === "button") {
     return (
-      <div className="relative">
+      <div
+        className="relative mt-0.5 shrink-0"
+        data-testid="session-replay-prompt-nav-button"
+      >
         <button
           type="button"
           aria-label="Open prompt navigation"
@@ -103,7 +106,7 @@ export function PromptJumpNav({
 
   return (
     <div
-      className="group absolute right-2 top-1/2 z-10 -translate-y-1/2"
+      className="group absolute right-2 top-1/2 z-10 -translate-y-1/2 pr-5"
       data-testid="session-replay-prompt-rail"
     >
       <div className="flex max-h-[420px] flex-col items-center gap-2 py-2">
@@ -125,7 +128,8 @@ export function PromptJumpNav({
         })}
       </div>
       <div
-        className={`pointer-events-none absolute right-5 top-1/2 hidden -translate-y-1/2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl group-hover:block group-hover:pointer-events-auto ${panelWidth}`}
+        className={`pointer-events-none absolute right-0 top-1/2 hidden -translate-y-1/2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl group-hover:block group-hover:pointer-events-auto ${panelWidth}`}
+        data-testid="session-replay-prompt-rail-panel"
       >
         <PromptList
           items={items}

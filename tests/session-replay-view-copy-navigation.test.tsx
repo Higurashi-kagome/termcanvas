@@ -290,6 +290,127 @@ test("PromptJumpNav calls onJump from rail and button modes", async () => {
   }
 });
 
+test("PromptJumpNav rail has a hover bridge between ticks and panel", async () => {
+  const { PromptJumpNav } = await import(
+    "../src/components/SessionReplayPromptNav.tsx"
+  );
+  const dom = installDom();
+  let root: Root | null = null;
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container, "test root should exist");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <PromptJumpNav
+          items={[
+            {
+              id: "prompt-0",
+              eventIndex: 0,
+              turnIndex: 0,
+              text: "First prompt",
+              timestamp: "2026-05-28T00:00:00.000Z",
+            },
+            {
+              id: "prompt-2",
+              eventIndex: 2,
+              turnIndex: 1,
+              text: "Second prompt",
+              timestamp: "2026-05-28T00:00:02.000Z",
+            },
+          ]}
+          activePromptId="prompt-0"
+          mode="rail"
+          onJump={() => {}}
+        />,
+      );
+    });
+
+    const rail = document.querySelector(
+      '[data-testid="session-replay-prompt-rail"]',
+    );
+    assert.match(
+      rail?.getAttribute("class") ?? "",
+      /pr-5/,
+      "rail hover target should include the horizontal bridge to the panel",
+    );
+
+    const panel = document.querySelector(
+      '[data-testid="session-replay-prompt-rail-panel"]',
+    );
+    assert.match(
+      panel?.getAttribute("class") ?? "",
+      /right-0/,
+      "panel should sit inside the bridged hover target without a hover gap",
+    );
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("PromptJumpNav button mode aligns with replay header controls", async () => {
+  const { PromptJumpNav } = await import(
+    "../src/components/SessionReplayPromptNav.tsx"
+  );
+  const dom = installDom();
+  let root: Root | null = null;
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container, "test root should exist");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <PromptJumpNav
+          items={[
+            {
+              id: "prompt-0",
+              eventIndex: 0,
+              turnIndex: 0,
+              text: "First prompt",
+              timestamp: "2026-05-28T00:00:00.000Z",
+            },
+            {
+              id: "prompt-2",
+              eventIndex: 2,
+              turnIndex: 1,
+              text: "Second prompt",
+              timestamp: "2026-05-28T00:00:02.000Z",
+            },
+          ]}
+          activePromptId="prompt-0"
+          mode="button"
+          onJump={() => {}}
+        />,
+      );
+    });
+
+    const wrapper = document.querySelector(
+      '[data-testid="session-replay-prompt-nav-button"]',
+    );
+    assert.match(
+      wrapper?.getAttribute("class") ?? "",
+      /mt-0\.5/,
+      "compact prompt nav button should align vertically with the resume button",
+    );
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
 test("SessionReplayView prompt navigation jumps to a prompt and syncs replay index", async () => {
   const scrollCalls: string[] = [];
   const originalScrollIntoView = window.HTMLElement?.prototype.scrollIntoView;
