@@ -174,3 +174,103 @@ test("SessionReplayView renders prompt and assistant text outside whole-row butt
     await rendered.cleanup();
   }
 });
+
+test("PromptJumpNav calls onJump from rail and button modes", async () => {
+  const { PromptJumpNav } = await import(
+    "../src/components/SessionReplayPromptNav.tsx"
+  );
+  const dom = installDom();
+  let root: Root | null = null;
+  const jumped: number[] = [];
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container, "test root should exist");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <PromptJumpNav
+          items={[
+            {
+              id: "prompt-0",
+              eventIndex: 0,
+              turnIndex: 0,
+              text: "First prompt",
+              timestamp: "2026-05-28T00:00:00.000Z",
+            },
+            {
+              id: "prompt-2",
+              eventIndex: 2,
+              turnIndex: 1,
+              text: "Second prompt",
+              timestamp: "2026-05-28T00:00:02.000Z",
+            },
+          ]}
+          activePromptId="prompt-0"
+          mode="rail"
+          onJump={(item) => jumped.push(item.eventIndex)}
+        />,
+      );
+    });
+
+    const railButton = document.querySelector(
+      '[aria-label="Jump to prompt 2"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(railButton, "rail mode should render prompt buttons");
+    await act(async () => {
+      railButton.click();
+    });
+    assert.deepEqual(jumped, [2]);
+
+    await act(async () => {
+      root?.render(
+        <PromptJumpNav
+          items={[
+            {
+              id: "prompt-0",
+              eventIndex: 0,
+              turnIndex: 0,
+              text: "First prompt",
+              timestamp: "2026-05-28T00:00:00.000Z",
+            },
+            {
+              id: "prompt-2",
+              eventIndex: 2,
+              turnIndex: 1,
+              text: "Second prompt",
+              timestamp: "2026-05-28T00:00:02.000Z",
+            },
+          ]}
+          activePromptId="prompt-0"
+          mode="button"
+          onJump={(item) => jumped.push(item.eventIndex)}
+        />,
+      );
+    });
+
+    const trigger = document.querySelector(
+      '[aria-label="Open prompt navigation"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(trigger, "button mode should render a header trigger");
+    await act(async () => {
+      trigger.click();
+    });
+
+    const popoverButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Second prompt"),
+    );
+    assert.ok(popoverButton, "button mode popover should list prompts");
+    await act(async () => {
+      popoverButton.click();
+    });
+    assert.deepEqual(jumped, [2, 2]);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
