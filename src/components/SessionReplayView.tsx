@@ -559,7 +559,8 @@ function UserPrompt({
         <div className="mt-1 flex items-center gap-1.5">
           <CopyMessageButton text={event.textPreview} label="Copy prompt" />
           <span
-            className="tc-mono tabular-nums"
+            data-testid="session-replay-prompt-timestamp"
+            className="tc-mono tabular-nums tc-replay-selection-muted select-none"
             style={{
               fontSize: "var(--text-tiny)",
               color: "var(--text-faint)",

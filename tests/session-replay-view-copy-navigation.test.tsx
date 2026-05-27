@@ -180,9 +180,13 @@ test("SessionReplayView renders prompt and assistant text outside whole-row butt
     const replyText = document.querySelector(
       '[data-testid="session-replay-assistant-text"]',
     );
+    const promptTimestamp = document.querySelector(
+      '[data-testid="session-replay-prompt-timestamp"]',
+    );
 
     assert.ok(promptText, "prompt text should render");
     assert.ok(replyText, "assistant text should render");
+    assert.ok(promptTimestamp, "prompt timestamp should render");
     assert.equal(
       promptText.closest("button"),
       null,
@@ -202,6 +206,16 @@ test("SessionReplayView renders prompt and assistant text outside whole-row butt
       replyText.getAttribute("class") ?? "",
       /select-text/,
       "assistant text should explicitly allow text selection",
+    );
+    assert.match(
+      promptTimestamp.getAttribute("class") ?? "",
+      /select-none/,
+      "prompt timestamp should not be selectable",
+    );
+    assert.match(
+      promptTimestamp.getAttribute("class") ?? "",
+      /tc-replay-selection-muted/,
+      "prompt timestamp should opt out of default blue selection",
     );
   } finally {
     await rendered.cleanup();
