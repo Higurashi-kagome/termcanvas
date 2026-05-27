@@ -538,7 +538,7 @@ function UserPrompt({
           id={promptId}
           data-current={isCurrent || undefined}
           data-highlighted={highlighted || undefined}
-          className="rounded-xl px-3 py-2 text-left transition-colors min-w-0 max-w-full overflow-hidden select-text"
+          className="tc-replay-selectable rounded-xl px-3 py-2 text-left transition-colors min-w-0 max-w-full overflow-hidden select-text"
           style={{
             backgroundColor: highlighted
               ? "color-mix(in srgb, var(--accent) 12%, var(--bubble-bg))"
@@ -550,7 +550,7 @@ function UserPrompt({
         >
           <div
             data-testid="session-replay-user-prompt-text"
-            className={`${markdownClassName} select-text`}
+            className={`${markdownClassName} tc-replay-selectable select-text`}
             dangerouslySetInnerHTML={{
               __html: renderMarkdown(event.textPreview),
             }}
@@ -597,7 +597,7 @@ function AssistantTextRow({
   return (
     <div className="group relative">
       <div data-current={isCurrent || undefined}>
-        <div className="relative pl-5 pr-3 py-1 transition-colors select-text">
+        <div className="tc-replay-selectable relative pl-5 pr-3 py-1 transition-colors select-text">
         <span
           aria-hidden
           className={ROW_RAIL_CLS}
@@ -605,7 +605,7 @@ function AssistantTextRow({
         />
         <div
           data-testid="session-replay-assistant-text"
-          className={`${markdownClassName} select-text`}
+          className={`${markdownClassName} tc-replay-selectable select-text`}
           dangerouslySetInnerHTML={{
             __html: renderMarkdown(event.textPreview),
           }}
@@ -828,7 +828,7 @@ function ToolSubItem({
             <div>
               <div className="mb-0.5 tc-eyebrow tc-mono">input</div>
               <pre
-                className="whitespace-pre-wrap break-words tc-mono m-0"
+                className="tc-replay-selectable whitespace-pre-wrap break-words tc-mono m-0"
                 style={{
                   fontSize: "var(--text-xs)",
                   lineHeight: "var(--leading-snug)",
@@ -843,7 +843,7 @@ function ToolSubItem({
             <div>
               <div className="mb-0.5 tc-eyebrow tc-mono">output</div>
               <pre
-                className="whitespace-pre-wrap break-words tc-mono m-0"
+                className="tc-replay-selectable whitespace-pre-wrap break-words tc-mono m-0"
                 style={{
                   fontSize: "var(--text-xs)",
                   lineHeight: "var(--leading-snug)",
@@ -1102,7 +1102,7 @@ function ErrorRow({
   return (
     <div data-current={isCurrent || undefined}>
       <div
-        className="relative pl-5 pr-3 py-1.5 transition-colors rounded-sm select-text"
+        className="tc-replay-selectable relative pl-5 pr-3 py-1.5 transition-colors rounded-sm select-text"
         style={{ backgroundColor: "var(--red-soft)" }}
       >
         <span
@@ -1111,7 +1111,7 @@ function ErrorRow({
           style={{ backgroundColor: "var(--red)" }}
         />
         <div
-          className="whitespace-pre-wrap break-words select-text"
+          className="tc-replay-selectable whitespace-pre-wrap break-words select-text"
           style={{
             fontSize: "var(--text-xs)",
             lineHeight: "var(--leading-normal)",

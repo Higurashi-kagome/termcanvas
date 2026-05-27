@@ -260,6 +260,24 @@ test("terminal cursor CSS opts out of canvas pan cursor inheritance", () => {
   );
 });
 
+test("session replay text selection uses terminal selection colors", () => {
+  const css = fs.readFileSync("src/index.css", "utf-8");
+
+  assert.match(
+    css,
+    /--text-selection-bg:\s*rgba\(196,\s*192,\s*184,\s*0\.25\);/,
+  );
+  assert.match(
+    css,
+    /--text-selection-bg:\s*rgba\(68,\s*64,\s*60,\s*0\.18\);/,
+  );
+  assert.match(
+    css,
+    /\.tc-replay-selectable::selection\s*\{[^}]*background:\s*var\(--text-selection-bg\);[^}]*color:\s*var\(--text-primary\);/s,
+  );
+}
+);
+
 test("terminal resizer hit areas stay outside tile content", () => {
   const css = fs.readFileSync("src/index.css", "utf-8");
 

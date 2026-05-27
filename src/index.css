@@ -49,6 +49,7 @@
   --text-secondary: #918e89;
   --text-muted: #7a7773;
   --text-faint: #3e3c39;
+  --text-selection-bg: rgba(196, 192, 184, 0.25);
   /* --text-metadata sits between secondary and muted: bright enough to
      read at a glance, dim enough not to fight the primary line. Used
      for scannable metadata like a project name in a list row, a relative
@@ -138,6 +139,7 @@
   --text-secondary: #57534e;
   --text-muted: #6b6660;
   --text-faint: #c4c0ba;
+  --text-selection-bg: rgba(68, 64, 60, 0.18);
   --text-metadata: #4a4540;
   --text-timestamp: #57534e;
   /* See dark-theme block above: --role-user / --role-assistant retired
@@ -701,6 +703,16 @@ a.tc-kbd:active {
    crowding the title. */
 .tc-tile-title-editable {
   cursor: text;
+}
+
+.tc-replay-selectable::selection {
+  background: var(--text-selection-bg);
+  color: var(--text-primary);
+}
+
+.tc-replay-selectable *::selection {
+  background: var(--text-selection-bg);
+  color: var(--text-primary);
 }
 
 /* Activity heatmap sparkline. Mounted only when the heatmap toggle is
