@@ -39,6 +39,21 @@ function installDom() {
   });
 
   window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+    return {
+      x: 0,
+      y: 0,
+      width: 1100,
+      height: 700,
+      top: 0,
+      right: 1100,
+      bottom: 700,
+      left: 0,
+      toJSON() {
+        return this;
+      },
+    };
+  };
 
   class ResizeObserverMock {
     observe() {}
@@ -272,5 +287,46 @@ test("PromptJumpNav calls onJump from rail and button modes", async () => {
       });
     }
     dom.window.close();
+  }
+});
+
+test("SessionReplayView prompt navigation jumps to a prompt and syncs replay index", async () => {
+  const scrollCalls: string[] = [];
+  const originalScrollIntoView = window.HTMLElement?.prototype.scrollIntoView;
+
+  const rendered = await renderReplay();
+  try {
+    window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrollCalls.push(this.id);
+    };
+
+    const secondPromptButton = document.querySelector(
+      '[aria-label="Jump to prompt 2"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(secondPromptButton, "prompt navigation should render");
+
+    await act(async () => {
+      secondPromptButton.click();
+    });
+
+    assert.ok(
+      scrollCalls.includes("prompt-2"),
+      "jump should scroll the second prompt into view",
+    );
+    assert.equal(
+      useSessionStore.getState().replayCurrentIndex,
+      2,
+      "jump should keep replayCurrentIndex in sync",
+    );
+    assert.equal(
+      document.getElementById("prompt-2")?.getAttribute("data-highlighted"),
+      "true",
+      "jump target should be highlighted immediately",
+    );
+  } finally {
+    if (originalScrollIntoView) {
+      window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+    await rendered.cleanup();
   }
 });

@@ -12,6 +12,14 @@ import type { TerminalType } from "../types";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { markdownClassName, renderMarkdown } from "../utils/markdownClass";
 import { resolveReplayResumeTarget } from "./sessionReplayModel.ts";
+import { PromptJumpNav } from "./SessionReplayPromptNav.tsx";
+import {
+  buildPromptJumpItems,
+  getPromptNavMode,
+  shouldRenderPromptJumpNav,
+  type PromptJumpItem,
+  type PromptNavMode,
+} from "./sessionReplayPromptNavModel.ts";
 
 /*
  * Session transcript.
@@ -262,6 +270,7 @@ function TopicHeader({
   onBack,
   onResume,
   backLabel,
+  promptNavAction,
 }: {
   topic: string;
   project: string;
@@ -279,6 +288,7 @@ function TopicHeader({
   onBack: () => void;
   onResume: () => void;
   backLabel: string;
+  promptNavAction?: React.ReactNode;
 }) {
   return (
     <div className="shrink-0 border-b border-[var(--border)] px-3 py-3">
@@ -378,6 +388,7 @@ function TopicHeader({
               </svg>
             </button>
           </div>
+          {promptNavAction}
           <button
             className="mt-0.5 shrink-0 inline-flex h-6 items-center gap-1 rounded-md px-2 text-[length:var(--text-xs)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             style={{
@@ -1128,6 +1139,13 @@ export function SessionReplayView() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const promptRefs = useRef(new Map<string, HTMLDivElement>());
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [activePromptId, setActivePromptId] = useState<string | null>(null);
+  const [highlightedPromptId, setHighlightedPromptId] = useState<string | null>(
+    null,
+  );
 
   // Thinking rows stay hidden in this stripped-down transcript view.
   const showThinking = false;
@@ -1171,6 +1189,23 @@ export function SessionReplayView() {
       else next.add(key);
       return next;
     });
+  }, []);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const update = () => setContainerWidth(node.getBoundingClientRect().width);
+    update();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
   const resumeTarget = useMemo(() => {
@@ -1333,6 +1368,65 @@ export function SessionReplayView() {
     return indices;
   }, [turns]);
 
+  const promptItems = useMemo(() => buildPromptJumpItems(turns), [turns]);
+  const promptNavMode = useMemo<PromptNavMode>(
+    () => getPromptNavMode(containerWidth),
+    [containerWidth],
+  );
+  const showPromptNav = shouldRenderPromptJumpNav(promptItems);
+
+  const registerPromptRef = useCallback(
+    (id: string, node: HTMLDivElement | null) => {
+      if (node) promptRefs.current.set(id, node);
+      else promptRefs.current.delete(id);
+    },
+    [],
+  );
+
+  const jumpToPrompt = useCallback(
+    (item: PromptJumpItem) => {
+      const node = promptRefs.current.get(item.id);
+      node?.scrollIntoView({ block: "start", behavior: "smooth" });
+      seekTo(item.eventIndex);
+      setActivePromptId(item.id);
+      setHighlightedPromptId(item.id);
+      window.setTimeout(() => {
+        setHighlightedPromptId((current) =>
+          current === item.id ? null : current,
+        );
+      }, 1400);
+    },
+    [seekTo],
+  );
+
+  useEffect(() => {
+    if (!showPromptNav) return;
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
+          );
+        const first = visible[0]?.target;
+        if (first?.id) setActivePromptId(first.id);
+      },
+      {
+        root: scrollRef.current,
+        threshold: 0.35,
+      },
+    );
+
+    for (const item of promptItems) {
+      const node = promptRefs.current.get(item.id);
+      if (node) observer.observe(node);
+    }
+
+    return () => observer.disconnect();
+  }, [promptItems, showPromptNav]);
+
   // Loading / error panels — same shape as before.
   if (!timeline) {
     return (
@@ -1378,8 +1472,18 @@ export function SessionReplayView() {
     if (isCurrent && el) currentRef.current = el;
   };
 
+  const promptNavAction =
+    showPromptNav && promptNavMode === "button" ? (
+      <PromptJumpNav
+        items={promptItems}
+        activePromptId={activePromptId}
+        mode="button"
+        onJump={jumpToPrompt}
+      />
+    ) : null;
+
   return (
-    <div className="flex flex-col h-full">
+    <div ref={containerRef} className="relative flex h-full flex-col">
       <TopicHeader
         topic={topic}
         project={projectName(timeline.projectDir)}
@@ -1412,6 +1516,7 @@ export function SessionReplayView() {
         onBack={exitReplay}
         onResume={handleResume}
         backLabel={(t.sessions_load_error_back as unknown as string) ?? "Back"}
+        promptNavAction={promptNavAction}
       />
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3">
@@ -1547,15 +1652,28 @@ export function SessionReplayView() {
                 className="space-y-2"
               >
                 <div
-                  ref={(el) =>
-                    assignCurrentRef(el, turn.userEvent!.index === currentIndex)
-                  }
+                  ref={(el) => {
+                    assignCurrentRef(
+                      el,
+                      turn.userEvent!.index === currentIndex,
+                    );
+                    const promptId = `prompt-${turn.userEvent!.index}`;
+                    const promptNode = el?.querySelector<HTMLDivElement>(
+                      `#${promptId}`,
+                    );
+                    registerPromptRef(
+                      promptId,
+                      promptNode ?? null,
+                    );
+                  }}
                 >
                   <UserPrompt
                     event={turn.userEvent}
                     isCurrent={turn.userEvent.index === currentIndex}
                     promptId={`prompt-${turn.userEvent.index}`}
-                    highlighted={false}
+                    highlighted={
+                      highlightedPromptId === `prompt-${turn.userEvent.index}`
+                    }
                   />
                 </div>
                 {(hasFold || answer) && (
@@ -1600,6 +1718,15 @@ export function SessionReplayView() {
           })}
         </div>
       </div>
+
+      {showPromptNav && promptNavMode !== "button" && (
+        <PromptJumpNav
+          items={promptItems}
+          activePromptId={activePromptId}
+          mode={promptNavMode}
+          onJump={jumpToPrompt}
+        />
+      )}
 
       <ConfirmDialog
         open={forkRequest !== null}
