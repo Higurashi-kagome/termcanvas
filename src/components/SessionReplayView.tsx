@@ -790,7 +790,8 @@ function ToolSubItem({
   return (
     <div className="pl-3" data-current={isCurrent || undefined}>
       <button
-        className="flex w-full items-center gap-1.5 text-left cursor-pointer py-0.5"
+        data-testid="session-replay-tool-item-toggle"
+        className="flex w-full items-center gap-1.5 text-left cursor-pointer py-0.5 select-none"
         onClick={(e) => {
           e.stopPropagation();
           onClick();
@@ -826,7 +827,12 @@ function ToolSubItem({
         <div className="mt-1 space-y-2 pl-3 pb-1">
           {item.tool.textPreview && (
             <div>
-              <div className="mb-0.5 tc-eyebrow tc-mono">input</div>
+              <div
+                data-testid="session-replay-tool-input-label"
+                className="mb-0.5 tc-eyebrow tc-mono tc-replay-selection-muted select-none"
+              >
+                input
+              </div>
               <pre
                 className="tc-replay-selectable whitespace-pre-wrap break-words tc-mono m-0"
                 style={{
@@ -841,7 +847,12 @@ function ToolSubItem({
           )}
           {item.result?.textPreview && (
             <div>
-              <div className="mb-0.5 tc-eyebrow tc-mono">output</div>
+              <div
+                data-testid="session-replay-tool-output-label"
+                className="mb-0.5 tc-eyebrow tc-mono tc-replay-selection-muted select-none"
+              >
+                output
+              </div>
               <pre
                 className="tc-replay-selectable whitespace-pre-wrap break-words tc-mono m-0"
                 style={{
@@ -904,7 +915,8 @@ function ToolGroup({
         style={{ backgroundColor: railColor(isGroupCurrent) }}
       />
       <button
-        className="flex w-full items-center gap-1.5 text-left cursor-pointer py-0.5"
+        data-testid="session-replay-tool-group-toggle"
+        className="flex w-full items-center gap-1.5 text-left cursor-pointer py-0.5 select-none"
         onClick={(e) => {
           e.stopPropagation();
           onSeek(node.index);
@@ -1050,7 +1062,8 @@ function WorkingFold({
     <div>
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 text-left cursor-pointer pl-9 pr-3 py-0.5"
+        data-testid="session-replay-working-fold-toggle"
+        className="flex w-full items-center gap-1.5 text-left cursor-pointer pl-9 pr-3 py-0.5 select-none"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();

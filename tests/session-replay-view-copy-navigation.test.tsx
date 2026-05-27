@@ -105,7 +105,25 @@ function replayTimeline(): ReplayTimeline {
   };
 }
 
-async function renderReplay() {
+function replayTimelineWithTools(): ReplayTimeline {
+  return {
+    sessionId: "session-tools",
+    projectDir: "/repo",
+    filePath: "/home/user/.codex/sessions/session-tools.jsonl",
+    startedAt: "2026-05-28T00:00:00.000Z",
+    endedAt: "2026-05-28T00:01:00.000Z",
+    totalTokens: 10,
+    editIndices: [],
+    events: [
+      event(0, "user_prompt", "Prompt with tool work"),
+      event(1, "tool_use", "Get-Content file"),
+      event(2, "tool_result", "tool output"),
+      event(3, "assistant_text", "Done"),
+    ],
+  };
+}
+
+async function renderReplay(timeline: ReplayTimeline = replayTimeline()) {
   const dom = installDom();
   let root: Root | null = null;
   const { SessionReplayView } = await import(
@@ -114,7 +132,7 @@ async function renderReplay() {
 
   useSessionStore.setState({
     panelView: "replay",
-    replayTimeline: replayTimeline(),
+    replayTimeline: timeline,
     replayCurrentIndex: 0,
     replayIsPlaying: false,
     replaySpeed: 1,
@@ -466,6 +484,69 @@ test("SessionReplayView keeps copy buttons while text becomes selectable", async
         (button) => button.getAttribute("aria-label") === "Copy reply",
       ),
       "reply copy button should remain",
+    );
+  } finally {
+    await rendered.cleanup();
+  }
+});
+
+test("SessionReplayView keeps tool chrome out of text selection", async () => {
+  const rendered = await renderReplay(replayTimelineWithTools());
+  try {
+    const workingFold = document.querySelector(
+      '[data-testid="session-replay-working-fold-toggle"]',
+    );
+    assert.match(
+      workingFold?.getAttribute("class") ?? "",
+      /select-none/,
+      "working fold chrome should not be selectable",
+    );
+
+    await act(async () => {
+      (workingFold as HTMLButtonElement | null)?.click();
+    });
+
+    const toolGroup = document.querySelector(
+      '[data-testid="session-replay-tool-group-toggle"]',
+    );
+    assert.match(
+      toolGroup?.getAttribute("class") ?? "",
+      /select-none/,
+      "tool group chrome should not be selectable",
+    );
+
+    await act(async () => {
+      (toolGroup as HTMLButtonElement | null)?.click();
+    });
+
+    const toolSubItem = document.querySelector(
+      '[data-testid="session-replay-tool-item-toggle"]',
+    );
+    assert.match(
+      toolSubItem?.getAttribute("class") ?? "",
+      /select-none/,
+      "tool item chrome should not be selectable",
+    );
+
+    await act(async () => {
+      (toolSubItem as HTMLButtonElement | null)?.click();
+    });
+
+    const inputLabel = document.querySelector(
+      '[data-testid="session-replay-tool-input-label"]',
+    );
+    const outputLabel = document.querySelector(
+      '[data-testid="session-replay-tool-output-label"]',
+    );
+    assert.match(
+      inputLabel?.getAttribute("class") ?? "",
+      /tc-replay-selection-muted/,
+      "input label should opt out of default blue selection",
+    );
+    assert.match(
+      outputLabel?.getAttribute("class") ?? "",
+      /tc-replay-selection-muted/,
+      "output label should opt out of default blue selection",
     );
   } finally {
     await rendered.cleanup();

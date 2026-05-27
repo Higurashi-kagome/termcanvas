@@ -715,6 +715,12 @@ a.tc-kbd:active {
   color: var(--text-primary);
 }
 
+.tc-replay-selection-muted::selection,
+.tc-replay-selection-muted *::selection {
+  background: transparent;
+  color: var(--text-muted);
+}
+
 /* Activity heatmap sparkline. Mounted only when the heatmap toggle is
    on, but the fade is driven from the canvas-root data attribute so the
    reveal is one canvas-wide transition rather than 50 per-tile flickers.
