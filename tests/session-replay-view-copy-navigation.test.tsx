@@ -330,3 +330,23 @@ test("SessionReplayView prompt navigation jumps to a prompt and syncs replay ind
     await rendered.cleanup();
   }
 });
+
+test("SessionReplayView keeps copy buttons while text becomes selectable", async () => {
+  const rendered = await renderReplay();
+  try {
+    assert.ok(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.getAttribute("aria-label") === "Copy prompt",
+      ),
+      "prompt copy button should remain",
+    );
+    assert.ok(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.getAttribute("aria-label") === "Copy reply",
+      ),
+      "reply copy button should remain",
+    );
+  } finally {
+    await rendered.cleanup();
+  }
+});
