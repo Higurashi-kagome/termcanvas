@@ -103,15 +103,29 @@ export function PromptJumpNav({
   }
 
   const panelWidth = mode === "rail" ? "w-[320px]" : "w-[260px]";
+  // Once the prompt count gets high enough, a flex column collapses the ticks into
+  // an unreadable stack. Switch to evenly-positioned absolute ticks instead.
+  const denseRail = items.length > 48;
 
   return (
     <div
       className="group absolute right-2 top-1/2 z-10 -translate-y-1/2 pr-5"
       data-testid="session-replay-prompt-rail"
     >
-      <div className="flex max-h-[420px] flex-col items-center gap-2 py-2">
-        {items.map((item) => {
+      <div
+        className={
+          denseRail
+            ? "relative h-[420px] w-4 py-1"
+            : "flex max-h-[420px] flex-col items-center gap-2 py-2"
+        }
+        data-testid="session-replay-prompt-rail-ticks"
+      >
+        {items.map((item, index) => {
           const active = item.id === activePromptId;
+          const top =
+            items.length <= 1
+              ? 0
+              : (index / (items.length - 1)) * 100;
           return (
             <button
               key={item.id}
@@ -119,10 +133,15 @@ export function PromptJumpNav({
               aria-label={`Jump to prompt ${item.turnIndex + 1}`}
               title={item.text}
               onClick={() => onJump(item)}
-              className="h-[2px] w-4 rounded-full transition-colors"
+              className={
+                denseRail
+                  ? "absolute left-0 h-[2px] w-4 -translate-y-1/2 rounded-full bg-[var(--text-faint)] transition-colors data-[active=true]:bg-[var(--accent)]"
+                  : "h-[2px] w-4 rounded-full bg-[var(--text-faint)] transition-colors data-[active=true]:bg-[var(--accent)]"
+              }
               style={{
-                backgroundColor: active ? "var(--accent)" : "var(--text-faint)",
+                top: denseRail ? `${top}%` : undefined,
               }}
+              data-active={active || undefined}
             />
           );
         })}

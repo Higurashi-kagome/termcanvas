@@ -21,6 +21,8 @@ import {
   type PromptNavMode,
 } from "./sessionReplayPromptNavModel.ts";
 
+type MeasuredPromptNavMode = PromptNavMode | null;
+
 /*
  * Session transcript.
  *
@@ -1155,7 +1157,7 @@ export function SessionReplayView() {
   const currentRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const promptRefs = useRef(new Map<string, HTMLDivElement>());
-  const [containerWidth, setContainerWidth] = useState(0);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const [activePromptId, setActivePromptId] = useState<string | null>(null);
   const [highlightedPromptId, setHighlightedPromptId] = useState<string | null>(
     null,
@@ -1383,8 +1385,11 @@ export function SessionReplayView() {
   }, [turns]);
 
   const promptItems = useMemo(() => buildPromptJumpItems(turns), [turns]);
-  const promptNavMode = useMemo<PromptNavMode>(
-    () => getPromptNavMode(containerWidth),
+  // Keep the prompt nav hidden until ResizeObserver reports a real drawer width;
+  // otherwise the header briefly renders the compact button before the rail mode wins.
+  const promptNavMode = useMemo<MeasuredPromptNavMode>(
+    () =>
+      containerWidth === null ? null : getPromptNavMode(containerWidth),
     [containerWidth],
   );
   const showPromptNav = shouldRenderPromptJumpNav(promptItems);
@@ -1733,7 +1738,7 @@ export function SessionReplayView() {
         </div>
       </div>
 
-      {showPromptNav && promptNavMode !== "button" && (
+      {showPromptNav && promptNavMode !== null && promptNavMode !== "button" && (
         <PromptJumpNav
           items={promptItems}
           activePromptId={activePromptId}

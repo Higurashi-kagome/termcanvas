@@ -377,6 +377,91 @@ test("PromptJumpNav rail has a hover bridge between ticks and panel", async () =
       /right-0/,
       "panel should sit inside the bridged hover target without a hover gap",
     );
+
+    const inactiveTick = document.querySelector(
+      '[aria-label="Jump to prompt 2"]',
+    ) as HTMLButtonElement | null;
+    assert.match(
+      inactiveTick?.getAttribute("class") ?? "",
+      /bg-\[var\(--text-faint\)\]/,
+      "rail ticks should keep a visible resting style without hard-coding inline colors",
+    );
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("PromptJumpNav rail keeps dense prompt lists narrow and fully represented", async () => {
+  const { PromptJumpNav } = await import(
+    "../src/components/SessionReplayPromptNav.tsx"
+  );
+  const dom = installDom();
+  let root: Root | null = null;
+
+  try {
+    const container = document.getElementById("root");
+    assert.ok(container, "test root should exist");
+    root = createRoot(container);
+
+    const items = Array.from({ length: 96 }, (_, index) => ({
+      id: `prompt-${index}`,
+      eventIndex: index,
+      turnIndex: index,
+      text: `Prompt ${index + 1}`,
+      timestamp: `2026-05-28T00:00:${String(index).padStart(2, "0")}.000Z`,
+    }));
+
+    await act(async () => {
+      root?.render(
+        <PromptJumpNav
+          items={items}
+          activePromptId="prompt-0"
+          mode="rail"
+          onJump={() => {}}
+        />,
+      );
+    });
+
+    const tickStack = document.querySelector(
+      '[data-testid="session-replay-prompt-rail-ticks"]',
+    );
+    assert.ok(tickStack, "rail mode should render a tick stack");
+    assert.match(
+      tickStack.getAttribute("class") ?? "",
+      /\brelative\b/,
+      "dense rail should switch to positioned ticks instead of collapsing them in a flex column",
+    );
+
+    const railTicks = tickStack.querySelectorAll("button");
+    assert.equal(
+      railTicks.length,
+      items.length,
+      "dense rail should keep every prompt represented on the rail",
+    );
+
+    const secondTick = tickStack.querySelector(
+      '[aria-label="Jump to prompt 2"]',
+    ) as HTMLButtonElement | null;
+    assert.match(
+      secondTick?.getAttribute("class") ?? "",
+      /h-\[2px\]/,
+      "dense rail ticks should stay thin like the original rail style",
+    );
+    assert.match(
+      secondTick?.getAttribute("class") ?? "",
+      /\bw-4\b/,
+      "dense rail ticks should share the same width as the original rail style",
+    );
+    assert.match(
+      secondTick?.getAttribute("class") ?? "",
+      /\babsolute\b/,
+      "dense rail ticks should be individually positioned along the rail",
+    );
   } finally {
     if (root) {
       await act(async () => {
@@ -432,6 +517,116 @@ test("PromptJumpNav button mode aligns with replay header controls", async () =>
       wrapper?.getAttribute("class") ?? "",
       /mt-0\.5/,
       "compact prompt nav button should align vertically with the resume button",
+    );
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    dom.window.close();
+  }
+});
+
+test("SessionReplayView does not flash prompt button before measuring container width", async () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+  const dom = new JSDOM(
+    "<!doctype html><html><body><div id='root'></div></body></html>",
+    { url: "http://localhost", pretendToBeVisual: true },
+  );
+  const { window } = dom;
+
+  globalThis.window = window as unknown as Window & typeof globalThis;
+  globalThis.document = window.document;
+  globalThis.HTMLElement = window.HTMLElement;
+  globalThis.Node = window.Node;
+  globalThis.Event = window.Event;
+  globalThis.MouseEvent = window.MouseEvent;
+  globalThis.localStorage = window.localStorage;
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: window.navigator,
+  });
+
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: async () => {},
+    },
+  });
+
+  window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+    return {
+      x: 0,
+      y: 0,
+      width: 1100,
+      height: 700,
+      top: 0,
+      right: 1100,
+      bottom: 700,
+      left: 0,
+      toJSON() {
+        return this;
+      },
+    };
+  };
+
+  class ResizeObserverDeferredMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver =
+    ResizeObserverDeferredMock as unknown as typeof ResizeObserver;
+
+  class IntersectionObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.IntersectionObserver =
+    IntersectionObserverMock as unknown as typeof IntersectionObserver;
+
+  let root: Root | null = null;
+
+  try {
+    const { SessionReplayView } = await import(
+      "../src/components/SessionReplayView.tsx"
+    );
+
+    useSessionStore.setState({
+      panelView: "replay",
+      replayTimeline: replayTimeline(),
+      replayCurrentIndex: 0,
+      replayIsPlaying: false,
+      replaySpeed: 1,
+      replayError: null,
+    });
+    useCanvasStore.setState({
+      sessionsOverlayOpen: true,
+      sessionsOverlayExpanded: true,
+    });
+    useProjectStore.setState({
+      projects: [],
+      focusedProjectId: null,
+      focusedWorktreeId: null,
+    });
+    useNotificationStore.setState({ notifications: [] });
+
+    const container = document.getElementById("root");
+    assert.ok(container, "test root should exist");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<SessionReplayView />);
+    });
+
+    assert.equal(
+      document.querySelector('[aria-label="Open prompt navigation"]'),
+      null,
+      "prompt button should stay hidden until container width is measured",
     );
   } finally {
     if (root) {
