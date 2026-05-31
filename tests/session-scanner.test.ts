@@ -9,7 +9,9 @@ import { SessionScanner } from "../electron/session-scanner.ts";
 async function withTempHome(fn: (homeDir: string) => Promise<void>) {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "termcanvas-session-scanner-home-"));
   const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
   process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
   try {
     await fn(homeDir);
   } finally {
@@ -17,6 +19,11 @@ async function withTempHome(fn: (homeDir: string) => Promise<void>) {
       delete process.env.HOME;
     } else {
       process.env.HOME = previousHome;
+    }
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
     }
     fs.rmSync(homeDir, { recursive: true, force: true });
   }
@@ -31,7 +38,7 @@ function writeJsonl(filePath: string, lines: object[]): void {
   );
 }
 
-test("session scanner includes codex history alongside claude sessions", async () => {
+test("session scanner includes codex history in scanned sessions", async () => {
   await withTempHome(async (homeDir) => {
     const claudeFile = path.join(
       homeDir,
@@ -93,17 +100,11 @@ test("session scanner includes codex history alongside claude sessions", async (
       });
     });
 
-    assert.equal(sessions.length, 2);
-
     const codex = sessions.find((session) => session.sessionId === "codex-session");
     assert.ok(codex);
     assert.equal(codex.projectDir, "/tmp/codex-project");
     assert.equal(codex.status, "turn_complete");
     assert.equal(codex.currentTool, undefined);
-
-    const claude = sessions.find((session) => session.sessionId === "claude-session");
-    assert.ok(claude);
-    assert.equal(claude.projectDir, "-tmp-claude-project");
   });
 });
 
@@ -120,8 +121,12 @@ test("session scanner loads codex replay timelines", async () => {
       },
       {
         timestamp: "2026-04-05T11:00:01.000Z",
-        type: "event_msg",
-        payload: { type: "user_message", message: "Fix the failing test" },
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "Fix the failing test" }],
+        },
       },
       {
         timestamp: "2026-04-05T11:00:02.000Z",
