@@ -55,6 +55,55 @@ test("buildPromptJumpItems skips headless turns and keeps timeline indices", () 
   ]);
 });
 
+test("buildPromptJumpItems filters synthetic prompt-nav noise and adjacent duplicates", () => {
+  const items = buildPromptJumpItems([
+    {
+      startIndex: 0,
+      userEvent: event(0, "user_prompt", "<subagent_notification>worker</subagent_notification>"),
+    },
+    {
+      startIndex: 1,
+      userEvent: event(1, "user_prompt", "<image name=[Image #1]>"),
+    },
+    {
+      startIndex: 2,
+      userEvent: event(2, "user_prompt", "Real prompt"),
+    },
+    {
+      startIndex: 3,
+      userEvent: {
+        ...event(3, "user_prompt", "Real prompt"),
+        timestamp: "2026-05-28T00:00:02.000Z",
+      },
+    },
+    {
+      startIndex: 4,
+      userEvent: event(
+        4,
+        "user_prompt",
+        "<image name=[Image #2]>\nPrompt with image context",
+      ),
+    },
+  ]);
+
+  assert.deepEqual(items, [
+    {
+      id: "prompt-2",
+      eventIndex: 2,
+      turnIndex: 0,
+      text: "Real prompt",
+      timestamp: "2026-05-28T00:00:02.000Z",
+    },
+    {
+      id: "prompt-4",
+      eventIndex: 4,
+      turnIndex: 1,
+      text: "Prompt with image context",
+      timestamp: "2026-05-28T00:00:04.000Z",
+    },
+  ]);
+});
+
 test("shouldRenderPromptJumpNav hides zero and one prompt sessions", () => {
   assert.equal(shouldRenderPromptJumpNav([]), false);
   assert.equal(
