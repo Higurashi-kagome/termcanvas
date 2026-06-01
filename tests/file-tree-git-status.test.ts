@@ -7,6 +7,10 @@ import {
   buildPierreGitStatus,
   collectStaleAncestorDirectories,
 } from "../src/components/RightPanel/FilesContent";
+import {
+  buildIgnoredDirectorySummaryPaths,
+  buildImmediateIgnoredChildPaths,
+} from "../shared/ignored-paths";
 import type { GitStatusEntry } from "../src/types";
 
 const entry = (path: string, status: GitStatusEntry["status"]): GitStatusEntry => ({
@@ -42,6 +46,35 @@ test("file tree git status keeps the highest-priority staged or changed state", 
   assert.deepEqual(buildPierreGitStatus(changed, staged, []), [
     { path: "src/app.ts", status: "deleted" },
   ]);
+});
+
+test("ignored summary keeps directory placeholders and hides nested children until expanded", () => {
+  assert.deepEqual(
+    buildIgnoredDirectorySummaryPaths([
+      "node_modules/",
+      "node_modules/react/",
+      "node_modules/react/index.js",
+      "dist/",
+      "dist/assets/",
+    ]),
+    ["dist/", "node_modules/"],
+  );
+});
+
+test("ignored child loader only keeps the next level under the expanded directory", () => {
+  assert.deepEqual(
+    buildImmediateIgnoredChildPaths("node_modules/", [
+      "node_modules/",
+      "node_modules/.bin/",
+      "node_modules/.bin/esbuild",
+      "node_modules/react/",
+      "node_modules/react/index.js",
+      "node_modules/react/cjs/react.production.js",
+      "node_modules/vite.js",
+      "dist/",
+    ]),
+    ["node_modules/.bin/", "node_modules/react/", "node_modules/vite.js"],
+  );
 });
 
 test("file tree drop moves files and directory subtrees in path snapshots", () => {

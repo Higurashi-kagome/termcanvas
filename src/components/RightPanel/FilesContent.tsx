@@ -5,6 +5,7 @@ import type {
   ContextMenuItem as PierreContextMenuItem,
   ContextMenuOpenContext as PierreContextMenuOpenContext,
   FileTreeBatchOperation,
+  FileTreeDirectoryHandle,
   FileTreeRenameEvent,
   FileTreeRowDecoration,
   FileTreeRowDecorationContext,
@@ -15,8 +16,13 @@ import { useGitStatus } from "../../hooks/useGitStatus";
 import { useT } from "../../i18n/useT";
 import { useCanvasStore } from "../../stores/canvasStore";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { useWorktreeFilesStore } from "../../stores/worktreeFilesStore";
 import { ContextMenu, type MenuItem } from "../ContextMenu";
 import type { GitFileStatus, GitStatusEntry } from "../../types";
+import {
+  buildIgnoredDirectorySummaryPaths,
+  buildImmediateIgnoredChildPaths,
+} from "../../../shared/ignored-paths";
 
 interface Props {
   worktreePath: string | null;
@@ -193,7 +199,8 @@ export function buildFileTreeMoveRequests(
 }
 export function FilesContent({ worktreePath, onFileClick }: Props) {
   const t = useT();
-  const { paths, ignoredPaths, refresh } = useWorktreeFiles(worktreePath);
+  const { paths, ignoredPaths, loadedIgnoredDirs, refresh } =
+    useWorktreeFiles(worktreePath);
   const { changedFiles, stagedFiles } = useGitStatus(worktreePath);
   const fileEditorPath = useCanvasStore((s) => s.fileEditorPath);
   const { notify } = useNotificationStore.getState();
@@ -217,6 +224,18 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
 
   const ignoredPathsRef = useRef(ignoredPaths);
   ignoredPathsRef.current = ignoredPaths;
+  const loadedIgnoredDirsRef = useRef(loadedIgnoredDirs);
+  loadedIgnoredDirsRef.current = loadedIgnoredDirs;
+  const ignoredLoadInflightRef = useRef<Set<string>>(new Set());
+  const visibleIgnoredPaths = useMemo(() => {
+    const visible = new Set(buildIgnoredDirectorySummaryPaths(ignoredPaths));
+    for (const directory of loadedIgnoredDirs) {
+      for (const child of buildImmediateIgnoredChildPaths(directory, ignoredPaths)) {
+        visible.add(child);
+      }
+    }
+    return [...visible].sort((left, right) => left.localeCompare(right));
+  }, [ignoredPaths, loadedIgnoredDirs]);
 
   // Tracks the currently open file (relative to worktreePath) so the row
   // decoration renderer — which is fixed at model construction — can read the
@@ -410,15 +429,15 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
     let toRemove: string[];
     let applied: string[];
     if (!synced || synced.model !== model || synced.wt !== wtKey) {
-      toAdd = ignoredPaths;
+      toAdd = visibleIgnoredPaths;
       toRemove = [];
       applied = [];
-    } else if (synced.paths === ignoredPaths) {
+    } else if (synced.paths === visibleIgnoredPaths) {
       return; // identity-equal
     } else {
       const oldSet = new Set(synced.paths);
-      const newSet = new Set(ignoredPaths);
-      toAdd = ignoredPaths.filter((p) => !oldSet.has(p));
+      const newSet = new Set(visibleIgnoredPaths);
+      toAdd = visibleIgnoredPaths.filter((p) => !oldSet.has(p));
       toRemove = synced.paths.filter((p) => !newSet.has(p));
       applied = [...synced.paths];
     }
@@ -428,7 +447,7 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
       const removedSet = new Set(toRemove);
       const staleAncestorDirs = collectStaleAncestorDirectories(
         synced?.paths ?? [],
-        ignoredPaths,
+        visibleIgnoredPaths,
         pathsRef.current,
       );
       for (const p of sortPathsDeepestFirst(toRemove)) {
@@ -455,9 +474,9 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
     }
 
     if (toAdd.length === 0) {
-      // applied === ignoredPaths after removes, so lock in the canonical
+      // applied === visibleIgnoredPaths after removes, so lock in the canonical
       // reference for cheap future identity checks.
-      ignoredSyncRef.current = { model, wt: wtKey, paths: ignoredPaths };
+      ignoredSyncRef.current = { model, wt: wtKey, paths: visibleIgnoredPaths };
       return;
     }
 
@@ -501,9 +520,13 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
         schedule();
         return;
       }
-      // Stream complete: swap in the canonical ignoredPaths reference so the
-      // next render's `synced.paths === ignoredPaths` short-circuit fires.
-      ignoredSyncRef.current = { model, wt: wtKey, paths: ignoredPaths };
+      // Stream complete: swap in the canonical ignored summary reference so
+      // the next render's identity short-circuit fires.
+      ignoredSyncRef.current = {
+        model,
+        wt: wtKey,
+        paths: visibleIgnoredPaths,
+      };
     };
 
     const schedule = () => {
@@ -518,7 +541,7 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [model, worktreePath, ignoredPaths]);
+  }, [model, worktreePath, visibleIgnoredPaths]);
 
   useEffect(() => {
     model.setGitStatus(pierreGitStatus);
@@ -711,6 +734,42 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
   // exist yet) and never re-attach when the file tree finally renders.
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
 
+  const maybeLoadIgnoredChildren = useCallback(
+    async (directoryPath: string) => {
+      const wtp = worktreePathRef.current;
+      const modelHandle = modelRef.current;
+      if (!wtp || !modelHandle) return;
+
+      const canonicalPath = directoryPath.endsWith("/")
+        ? directoryPath
+        : `${directoryPath}/`;
+      if (!ignoredPathsRef.current.includes(canonicalPath)) return;
+      if (loadedIgnoredDirsRef.current.includes(canonicalPath)) return;
+      if (ignoredLoadInflightRef.current.has(canonicalPath)) return;
+
+      const item = modelHandle.getItem(canonicalPath);
+      if (!item || !item.isDirectory()) return;
+      const directory = item as FileTreeDirectoryHandle;
+      if (!directory.isExpanded()) return;
+
+      ignoredLoadInflightRef.current.add(canonicalPath);
+      try {
+        const children = await window.termcanvas.fs.listIgnoredChildren(
+          wtp,
+          canonicalPath,
+        );
+        useWorktreeFilesStore
+          .getState()
+          .resolveIgnoredChildren(wtp, canonicalPath, children);
+      } catch (err) {
+        notify("error", `Load ignored files failed: ${err}`);
+      } finally {
+        ignoredLoadInflightRef.current.delete(canonicalPath);
+      }
+    },
+    [notify],
+  );
+
   // Capture native dragstart events that bubble out of the @pierre/trees
   // shadow DOM. The library sets `text/plain` to the row's relative path; in
   // bubble phase we override with absolute paths and add our own
@@ -760,12 +819,38 @@ export function FilesContent({ worktreePath, onFileClick }: Props) {
       const wtp = worktreePathRef.current;
       if (!wtp) return;
       const origin = findRowFromEvent(e);
-      if (origin == null || origin.type !== "file") return;
-      onFileClickRef.current(`${wtp}/${origin.path}`);
+      if (origin == null) return;
+      if (origin.type === "file") {
+        onFileClickRef.current(`${wtp}/${origin.path}`);
+        return;
+      }
+
+      // ignored 首屏只注入目录占位；等目录真的展开后，再懒加载这一层子项，
+      // 避免每次 refresh 都扫完整个 ignored 树。
+      queueMicrotask(() => {
+        void maybeLoadIgnoredChildren(origin.path);
+      });
     };
     containerEl.addEventListener("click", handler);
     return () => containerEl.removeEventListener("click", handler);
-  }, [containerEl]);
+  }, [containerEl, maybeLoadIgnoredChildren]);
+
+  useEffect(() => {
+    if (!containerEl) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowRight" && e.key !== "Enter" && e.key !== " ") {
+        return;
+      }
+
+      queueMicrotask(() => {
+        const focusedPath = modelRef.current?.getFocusedPath();
+        if (!focusedPath) return;
+        void maybeLoadIgnoredChildren(focusedPath);
+      });
+    };
+    containerEl.addEventListener("keydown", handler);
+    return () => containerEl.removeEventListener("keydown", handler);
+  }, [containerEl, maybeLoadIgnoredChildren]);
 
   // Right-click on the empty area of the file tree should still offer the
   // "New File / New Folder / Reveal" menu rooted at the worktree, matching

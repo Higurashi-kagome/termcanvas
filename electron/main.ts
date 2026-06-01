@@ -183,6 +183,7 @@ import { ComputerUseManager } from "./computer-use-manager";
 import { SessionScanner } from "./session-scanner.ts";
 import { mergeAndDedupeSessions } from "./session-list.ts";
 import type { RenderDiagnosticEventInput } from "../shared/render-diagnostics";
+import { listIgnoredChildren } from "./ignored-children";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -430,9 +431,6 @@ function createWindow() {
     // until the next input-driven repaint. Force a full redraw on focus so
     // fixed/overflow-hidden panels repaint immediately.
     mainWindow?.webContents.invalidate();
-    for (const dirPath of fileTreeWatcher.getWatchedDirs()) {
-      sendToWindow(mainWindow, "fs:dir-changed", dirPath);
-    }
     // macOS Space switching does not reliably fire `visibilitychange` on the
     // renderer side, so the renderer's existing recovery path can miss the
     // return-from-Space transition entirely. Push a lifecycle ping from the
@@ -1769,28 +1767,35 @@ function setupIpc() {
         return [] as string[];
       }
 
-      const [filesOutput, dirsOutput] = await Promise.all([
-        runGit(["ls-files", "-z", "--others", "--ignored", "--exclude-standard"]),
-        runGit([
-          "ls-files",
-          "-z",
-          "--others",
-          "--ignored",
-          "--exclude-standard",
-          "--directory",
-        ]),
+      const dirsOutput = await runGit([
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
       ]);
-      return [
-        ...new Set([
-          ...parseNulSeparatedGitPaths(dirsOutput),
-          ...parseNulSeparatedGitPaths(filesOutput),
-        ]),
-      ];
+      return parseNulSeparatedGitPaths(dirsOutput);
     } catch (err) {
       console.warn(`[fs:list-ignored-files] failed:`, err);
       return [] as string[];
     }
   });
+
+  ipcMain.handle(
+    "fs:list-ignored-children",
+    async (_event, dirPath: string, parentPath: string) => {
+      try {
+        if (!(await isGitRepo(dirPath))) {
+          return [] as string[];
+        }
+        return await listIgnoredChildren(dirPath, parentPath);
+      } catch (err) {
+        console.warn(`[fs:list-ignored-children] failed:`, err);
+        return [] as string[];
+      }
+    },
+  );
 
   ipcMain.handle("cli:is-registered", () => isCliRegistered(getCliDir()));
   ipcMain.handle("cli:register", () => {

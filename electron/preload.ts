@@ -597,6 +597,12 @@ contextBridge.exposeInMainWorld("termcanvas", {
       ipcRenderer.invoke("fs:list-ignored-files", dirPath) as Promise<
         string[]
       >,
+    listIgnoredChildren: (dirPath: string, parentPath: string) =>
+      ipcRenderer.invoke(
+        "fs:list-ignored-children",
+        dirPath,
+        parentPath,
+      ) as Promise<string[]>,
     readFile: (filePath: string) =>
       ipcRenderer.invoke("fs:read-file", filePath) as Promise<
         { type: string; content: string } | { error: string; size?: string }

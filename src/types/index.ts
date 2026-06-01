@@ -894,6 +894,10 @@ export interface TermCanvasAPI {
       paths: string[];
     }>;
     listIgnoredFiles: (dirPath: string) => Promise<string[]>;
+    listIgnoredChildren: (
+      dirPath: string,
+      parentPath: string,
+    ) => Promise<string[]>;
     readFile: (
       filePath: string,
     ) => Promise<
