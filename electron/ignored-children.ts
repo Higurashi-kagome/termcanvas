@@ -11,6 +11,8 @@ function toRelativePosixPath(rootPath: string, targetPath: string): string {
 }
 
 function toGitCheckIgnorePath(relPath: string, isDirectory: boolean): string {
+  // `git check-ignore` distinguishes directories by the trailing slash; keep
+  // the canonical file-tree form so ignored folders round-trip correctly.
   return isDirectory ? `${relPath}/` : relPath;
 }
 
@@ -77,6 +79,10 @@ export async function listIgnoredChildren(
     throw err;
   }
 
+  // Only inspect the directory's immediate children. The previous
+  // `git ls-files -- <prefix>` approach enumerated the entire ignored subtree
+  // just to recover this one level, which is exactly what made expanding
+  // `node_modules/` or `.worktrees/` take seconds.
   const candidates = entries
     .filter((entry) => entry.name !== "." && entry.name !== "..")
     .map((entry) => {

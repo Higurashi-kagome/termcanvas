@@ -1789,6 +1789,9 @@ function setupIpc() {
         if (!(await isGitRepo(dirPath))) {
           return [] as string[];
         }
+        // Expand ignored directories one level at a time. `listIgnoredChildren`
+        // uses `readdir + git check-ignore` so we avoid enumerating an entire
+        // ignored subtree just to render the next row level.
         return await listIgnoredChildren(dirPath, parentPath);
       } catch (err) {
         console.warn(`[fs:list-ignored-children] failed:`, err);
