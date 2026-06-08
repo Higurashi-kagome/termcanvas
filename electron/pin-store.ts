@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { EventEmitter } from "node:events";
 import type {
   Pin,
@@ -11,6 +10,7 @@ import type {
   UpdatePinInput,
 } from "../shared/pin.js";
 import { normalizePinBodyInput } from "../shared/pin.js";
+import { buildTcAttachmentBaseUrl } from "./attachment-url";
 
 export type { Pin, PinStatus, PinLink, CreatePinInput, UpdatePinInput };
 
@@ -187,8 +187,9 @@ export class PinStore extends EventEmitter {
     // origin (file:// in prod, http://localhost in dev — file:// images would
     // otherwise be blocked by webSecurity in dev). The handler in main.ts
     // re-validates that the resolved disk path stays under the pins root.
-    const fileUrl = pathToFileURL(this.attachmentsDir(pin.repo, pin.id));
-    pin.attachmentsUrl = `tc-attachment://local${fileUrl.pathname}`;
+    pin.attachmentsUrl = buildTcAttachmentBaseUrl(
+      this.attachmentsDir(pin.repo, pin.id),
+    );
   }
 
   private repoDir(repo: string): string {

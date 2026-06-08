@@ -182,6 +182,7 @@ import { AgentService, type AgentConfig } from "./agent-service";
 import { ComputerUseManager } from "./computer-use-manager";
 import { SessionScanner } from "./session-scanner.ts";
 import { mergeAndDedupeSessions } from "./session-list.ts";
+import { resolveTcAttachmentRequestPath } from "./attachment-url";
 import { buildPinRenderHtml } from "./pin-render-utils";
 import type { RenderDiagnosticEventInput } from "../shared/render-diagnostics";
 import { listIgnoredChildren } from "./ignored-children";
@@ -2515,9 +2516,9 @@ app.whenReady().then(async () => {
   const ATTACHMENTS_ROOT = path.join(TERMCANVAS_DIR, "pins");
   protocol.handle("tc-attachment", async (request) => {
     try {
-      const url = new URL(request.url);
-      const requestedPath = decodeURIComponent(url.pathname);
-      const resolved = path.resolve(requestedPath);
+      const resolved = path.resolve(
+        resolveTcAttachmentRequestPath(request.url),
+      );
       if (
         resolved !== ATTACHMENTS_ROOT &&
         !resolved.startsWith(ATTACHMENTS_ROOT + path.sep)
