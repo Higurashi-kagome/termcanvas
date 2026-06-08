@@ -183,7 +183,10 @@ import { ComputerUseManager } from "./computer-use-manager";
 import { SessionScanner } from "./session-scanner.ts";
 import { mergeAndDedupeSessions } from "./session-list.ts";
 import { resolveTcAttachmentRequestPath } from "./attachment-url";
-import { buildPinRenderHtml } from "./pin-render-utils";
+import {
+  buildPinRenderHtml,
+  type PinRenderTheme,
+} from "./pin-render-utils";
 import type { RenderDiagnosticEventInput } from "../shared/render-diagnostics";
 import { listIgnoredChildren } from "./ignored-children";
 
@@ -349,7 +352,30 @@ const apiServer = new ApiServer({
   taskStore,
 });
 
-function openPinPreviewWindow(repo: string, pinId: string): void {
+async function readPreviewTheme(
+  sender: Electron.WebContents,
+): Promise<PinRenderTheme> {
+  try {
+    const theme = await sender.executeJavaScript(
+      `(() => {
+        const saved = localStorage.getItem('termcanvas-theme');
+        if (saved === 'light' || saved === 'dark') return saved;
+        const attr = document.documentElement?.getAttribute('data-theme');
+        return attr === 'light' ? 'light' : 'dark';
+      })()`,
+      true,
+    );
+    return theme === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function openPinPreviewWindow(
+  repo: string,
+  pinId: string,
+  theme: PinRenderTheme = "dark",
+): void {
   const pin = taskStore.get(repo, pinId);
   if (!pin) {
     throw new Error(`Pin not found: ${pinId}`);
@@ -363,7 +389,7 @@ function openPinPreviewWindow(repo: string, pinId: string): void {
     minHeight: 360,
     show: false,
     title: pin.title.trim() || "Pin Preview",
-    backgroundColor: "#ffffff",
+    backgroundColor: theme === "light" ? "#eae8e4" : "#1a1918",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -389,7 +415,10 @@ function openPinPreviewWindow(repo: string, pinId: string): void {
     if (!win.isDestroyed()) win.show();
   });
 
-  const html = buildPinRenderHtml(pin);
+  const html = buildPinRenderHtml(pin, {
+    theme,
+    interactivePreview: true,
+  });
   initialUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
   void win.loadURL(initialUrl);
 }
@@ -2314,8 +2343,9 @@ function setupIpc() {
     taskStore.remove(repo, id);
   });
 
-  ipcMain.handle("pin:open-preview", (_event, repo: string, id: string) => {
-    openPinPreviewWindow(repo, id);
+  ipcMain.handle("pin:open-preview", async (event, repo: string, id: string) => {
+    const theme = await readPreviewTheme(event.sender);
+    openPinPreviewWindow(repo, id, theme);
   });
 
   ipcMain.handle(

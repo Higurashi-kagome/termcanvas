@@ -62,12 +62,20 @@ test("buildPinRenderHtml wraps markdown pins in a renderable document", () => {
       body: "![shot](./render-pin-aa11.attachments/shot.png)\n\n**bold**",
       attachmentsUrl: "tc-attachment://local/tmp/render-pin-aa11.attachments",
     }),
+    {
+      theme: "light",
+      interactivePreview: true,
+    },
   );
 
   assert.ok(html.startsWith("<!doctype html>"));
   assert.ok(html.includes("<main>"));
   assert.ok(html.includes("&lt;title&gt;"));
   assert.ok(html.includes("<strong>bold</strong>"));
+  assert.ok(html.includes('data-termcanvas-theme="light"'));
+  assert.ok(html.includes("--tc-preview-bg:#eae8e4"));
+  assert.ok(html.includes(".fancybox__backdrop"));
+  assert.ok(html.includes("window.Fancybox"));
   assert.ok(
     html.includes(
       'src="tc-attachment://local/tmp/render-pin-aa11.attachments/shot.png"',
@@ -88,6 +96,10 @@ test("buildPinRenderHtml prepares full html documents for sandboxed rendering", 
       </html>`,
       attachmentsUrl: "tc-attachment://local/tmp/render-pin-aa11.attachments",
     }),
+    {
+      theme: "dark",
+      interactivePreview: true,
+    },
   );
 
   assert.equal(isPinHtmlDocument(html), true);
@@ -95,6 +107,8 @@ test("buildPinRenderHtml prepares full html documents for sandboxed rendering", 
   assert.ok(!html.includes("<base"));
   assert.ok(!html.includes("default-src *"));
   assert.ok(html.includes("<script>window.ok = true</script>"));
+  assert.ok(html.includes('data-termcanvas-theme="dark"'));
+  assert.ok(html.includes("--tc-preview-bg:#1a1918"));
   assert.ok(
     html.includes(
       'src="tc-attachment://local/tmp/render-pin-aa11.attachments/shot.png"',

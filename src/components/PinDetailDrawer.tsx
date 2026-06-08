@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, DragEvent } from "react";
+import type { ClipboardEvent, DragEvent, MouseEvent } from "react";
 import { ExternalLink } from "lucide-react";
 import {
   useCanvasStore,
@@ -70,6 +70,10 @@ export function PinDetailDrawer() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{
+    src: string;
+    alt: string;
+  } | null>(null);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -102,6 +106,12 @@ export function PinDetailDrawer() {
       setEditing(false);
     }
   }, [pin?.id]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLightboxImage(null);
+    }
+  }, [isOpen]);
 
   // Focus title input when entering edit or compose mode
   useEffect(() => {
@@ -325,28 +335,57 @@ export function PinDetailDrawer() {
     }
   }, [pin, previewBusy]);
 
+  const handleCloseLightbox = useCallback(() => {
+    setLightboxImage(null);
+  }, []);
+
+  const handleMarkdownBodyClick = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const img = target.closest("img");
+    if (!(img instanceof HTMLImageElement)) return;
+    const src = img.getAttribute("src");
+    if (!src) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setLightboxImage({
+      src,
+      alt: img.getAttribute("alt") ?? "",
+    });
+  }, []);
+
   // Keyboard handlers — latest-ref pattern: the listener is mounted once per
   // open/close cycle, but reads the freshest state and callbacks via a ref so
   // every keystroke in edit mode doesn't tear down + rebind window listeners.
   const keyboardRef = useRef({
     isEditing,
     showDeleteConfirm,
+    lightboxOpen: false,
     handleCancelEdit,
     handleSaveEdit,
     handleCloseDrawer,
+    handleCloseLightbox,
   });
   keyboardRef.current = {
     isEditing,
     showDeleteConfirm,
+    lightboxOpen: lightboxImage !== null,
     handleCancelEdit,
     handleSaveEdit,
     handleCloseDrawer,
+    handleCloseLightbox,
   };
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
       const k = keyboardRef.current;
       if (e.key === "Escape") {
+        if (k.lightboxOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          k.handleCloseLightbox();
+          return;
+        }
         if (k.showDeleteConfirm) return;
         if (k.isEditing) {
           e.stopPropagation();
@@ -362,7 +401,7 @@ export function PinDetailDrawer() {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isOpen]);
+  }, [isOpen, lightboxImage]);
 
   // The detail drawer always renders to the right of the pin drawer,
   // so its left edge IS the drawer-aware left inset (left panel +
@@ -605,6 +644,7 @@ export function PinDetailDrawer() {
                 ) : pin?.body ? (
                   <div
                     className={markdownClassName}
+                    onClick={handleMarkdownBodyClick}
                     dangerouslySetInnerHTML={{ __html: bodyHtml }}
                   />
                 ) : (
@@ -673,6 +713,42 @@ export function PinDetailDrawer() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {lightboxImage && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center p-6"
+            style={{ backgroundColor: "var(--scrim)" }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) handleCloseLightbox();
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={lightboxImage.alt || "Pin image preview"}
+          >
+            <button
+              type="button"
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full border bg-[var(--surface)] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-hover)]"
+              style={{ borderColor: "var(--border)" }}
+              onClick={handleCloseLightbox}
+              aria-label={t["pin.closeDetail"]}
+            >
+              <svg width="14" height="14" viewBox="0 0 10 10" fill="none">
+                <path
+                  d="M2 2L8 8M8 2L2 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            <img
+              src={lightboxImage.src}
+              alt={lightboxImage.alt}
+              className="max-h-full max-w-full rounded-lg border object-contain shadow-2xl"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+            />
           </div>
         )}
       </div>

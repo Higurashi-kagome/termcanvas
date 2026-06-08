@@ -45,6 +45,13 @@ export interface NormalizedPinRenderOptions {
   fullPage: boolean;
 }
 
+export type PinRenderTheme = "dark" | "light";
+
+export interface PinRenderHtmlOptions {
+  theme?: PinRenderTheme;
+  interactivePreview?: boolean;
+}
+
 export function isPinHtmlDocument(text: string): boolean {
   return HTML_DOCUMENT_RE.test(text);
 }
@@ -119,10 +126,19 @@ export function normalizePinRenderOptions(
   };
 }
 
-export function buildPinRenderHtml(pin: Pin): string {
+export function buildPinRenderHtml(
+  pin: Pin,
+  options: PinRenderHtmlOptions = {},
+): string {
   const baseUrl = normalizeAttachmentsUrl(pin.attachmentsUrl);
+  const previewHeadInner = buildPreviewHeadInner(pin.title || "Pin", options);
   if (isPinHtmlDocument(pin.body)) {
-    return prepareHtmlDocument(pin.body, baseUrl);
+    return prepareHtmlDocument(
+      pin.body,
+      baseUrl,
+      options.theme,
+      previewHeadInner,
+    );
   }
 
   const rendered = marked.parse(pin.body, {
@@ -130,30 +146,22 @@ export function buildPinRenderHtml(pin: Pin): string {
     breaks: true,
   }) as string;
   const body = rewriteRelativeAttachmentMedia(rendered, baseUrl);
-  const title = escapeHtml(pin.title || "Pin");
+  const previewHead = `<head>${previewHeadInner}</head>`;
   return [
     "<!doctype html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    pinRenderCspMeta(),
-    `<title>${title}</title>`,
-    "<style>",
-    "body{margin:0;background:#fff;color:#111;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}",
-    "main{box-sizing:border-box;max-width:840px;margin:0 auto;padding:32px;}",
-    "img,svg,video,canvas{max-width:100%;height:auto;}",
-    "pre{overflow:auto;padding:12px;background:#f6f8fa;border-radius:6px;}",
-    "code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}",
-    "table{border-collapse:collapse;width:100%;}td,th{border:1px solid #d0d7de;padding:6px 8px;}",
-    "</style>",
-    "</head>",
+    `<html lang="en"${options.theme ? ` data-termcanvas-theme="${options.theme}"` : ""}>`,
+    previewHead,
     `<body><main>${body}</main></body>`,
     "</html>",
   ].join("");
 }
 
-function prepareHtmlDocument(text: string, baseUrl: string | null): string {
+function prepareHtmlDocument(
+  text: string,
+  baseUrl: string | null,
+  theme: PinRenderTheme | undefined,
+  previewHeadInner: string,
+): string {
   let html = text;
   html = html.replace(/<base\b[^>]*>/gi, "");
   html = html.replace(
@@ -161,17 +169,18 @@ function prepareHtmlDocument(text: string, baseUrl: string | null): string {
     "",
   );
   html = rewriteRelativeAttachmentMedia(html, baseUrl);
+  html = applyPreviewThemeToHtmlTag(html, theme);
 
   if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head\b([^>]*)>/i, `<head$1>${pinRenderCspMeta()}`);
+    return html.replace(/<head\b([^>]*)>/i, `<head$1>${previewHeadInner}`);
   }
   if (/<html\b[^>]*>/i.test(html)) {
     return html.replace(
       /<html\b([^>]*)>/i,
-      `<html$1><head>${pinRenderCspMeta()}</head>`,
+      `<html$1><head>${previewHeadInner}</head>`,
     );
   }
-  return `<!doctype html><html><head>${pinRenderCspMeta()}</head>${html}</html>`;
+  return `<!doctype html><html${theme ? ` data-termcanvas-theme="${theme}"` : ""}><head>${previewHeadInner}</head>${html}</html>`;
 }
 
 function rewriteRelativeAttachmentMedia(
@@ -283,6 +292,137 @@ function pinRenderCspMeta(): string {
   return `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(
     PIN_RENDER_CSP,
   )}">`;
+}
+
+function buildPreviewHeadInner(
+  title: string,
+  options: PinRenderHtmlOptions,
+): string {
+  return [
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    pinRenderCspMeta(),
+    `<title>${escapeHtml(title)}</title>`,
+    `<style>${buildPreviewStyles(options.theme)}</style>`,
+    options.interactivePreview ? `<script>${previewBridgeScript()}</script>` : "",
+  ].join("");
+}
+
+function buildPreviewStyles(theme: PinRenderTheme | undefined): string {
+  if (theme === "light") {
+    return basePreviewStyles(
+      "#eae8e4",
+      "#f3f2ef",
+      "#e5e3df",
+      "#dbd8d3",
+      "#1c1917",
+      "#57534e",
+      "#44403c",
+      "rgba(28, 25, 23, 0.42)",
+    );
+  }
+  if (theme === "dark") {
+    return basePreviewStyles(
+      "#1a1918",
+      "#222120",
+      "#2a2928",
+      "#333231",
+      "#e4e2df",
+      "#918e89",
+      "#c4c0b8",
+      "rgba(0, 0, 0, 0.55)",
+    );
+  }
+  return [
+    "body{margin:0;background:#fff;color:#111;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}",
+    "main{box-sizing:border-box;max-width:840px;margin:0 auto;padding:32px;}",
+    "img,svg,video,canvas{max-width:100%;height:auto;}",
+    "pre{overflow:auto;padding:12px;background:#f6f8fa;border-radius:6px;}",
+    "code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}",
+    "table{border-collapse:collapse;width:100%;}",
+    "td,th{border:1px solid #d0d7de;padding:6px 8px;}",
+    ".fancybox__backdrop{background:rgba(0,0,0,0.55)!important;}",
+  ].join("");
+}
+
+function basePreviewStyles(
+  bg: string,
+  surface: string,
+  surfaceHover: string,
+  border: string,
+  text: string,
+  textMuted: string,
+  accent: string,
+  scrim: string,
+): string {
+  return [
+    `:root{--tc-preview-bg:${bg};--tc-preview-surface:${surface};--tc-preview-surface-hover:${surfaceHover};--tc-preview-border:${border};--tc-preview-text:${text};--tc-preview-text-muted:${textMuted};--tc-preview-accent:${accent};--tc-preview-scrim:${scrim};}`,
+    `html[data-termcanvas-theme="light"],html[data-termcanvas-theme="dark"]{color-scheme:${bg === "#eae8e4" ? "light" : "dark"};}`,
+    "body{margin:0;background:var(--tc-preview-bg);color:var(--tc-preview-text);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}",
+    "main{box-sizing:border-box;max-width:840px;margin:0 auto;padding:32px;}",
+    "a{color:var(--tc-preview-accent);}",
+    "img,svg,video,canvas{max-width:100%;height:auto;}",
+    "img{border-radius:8px;border:1px solid var(--tc-preview-border);background:var(--tc-preview-surface);}",
+    "pre{overflow:auto;padding:12px;background:var(--tc-preview-surface);border:1px solid var(--tc-preview-border);border-radius:8px;}",
+    "code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}",
+    "table{border-collapse:collapse;width:100%;}",
+    "td,th{border:1px solid var(--tc-preview-border);padding:6px 8px;}",
+    "th{background:var(--tc-preview-surface-hover);}",
+    "blockquote{border-left:3px solid var(--tc-preview-border);margin-left:0;padding-left:14px;color:var(--tc-preview-text-muted);}",
+    ".fancybox__backdrop{background:var(--tc-preview-scrim)!important;}",
+    ".fancybox__container,.fancybox__toolbar,.fancybox__footer,.fancybox__caption{color:var(--tc-preview-text)!important;}",
+    ".fancybox__toolbar,.fancybox__footer{background:color-mix(in srgb,var(--tc-preview-bg) 88%,transparent)!important;}",
+    ".f-button{background:var(--tc-preview-surface)!important;color:var(--tc-preview-text)!important;border:1px solid var(--tc-preview-border)!important;}",
+    ".f-button:hover{background:var(--tc-preview-surface-hover)!important;}",
+  ].join("");
+}
+
+function previewBridgeScript(): string {
+  return [
+    "(function(){",
+    "  function closePreview(){",
+    "    try {",
+    "      var fancybox = window.Fancybox;",
+    "      if (!fancybox) return false;",
+    "      var instance = typeof fancybox.getInstance === 'function' ? fancybox.getInstance() : null;",
+    "      if (instance && typeof instance.close === 'function') { instance.close(); return true; }",
+    "      if (typeof fancybox.close === 'function') { fancybox.close(); return true; }",
+    "    } catch {}",
+    "    return false;",
+    "  }",
+    "  document.addEventListener('keydown', function(event){",
+    "    if (event.key !== 'Escape') return;",
+    "    if (!closePreview()) return;",
+    "    event.preventDefault();",
+    "    event.stopPropagation();",
+    "  }, true);",
+    "  document.addEventListener('click', function(event){",
+    "    var target = event.target;",
+    "    if (!(target instanceof Element)) return;",
+    "    if (target.closest('[data-fancybox-close], .fancybox__backdrop')) {",
+    "      if (closePreview()) { event.preventDefault(); event.stopPropagation(); }",
+    "      return;",
+    "    }",
+    "    var container = target.closest('.fancybox__container');",
+    "    if (!container) return;",
+    "    if (target.closest('.fancybox__content, .fancybox__toolbar, .fancybox__footer, .fancybox__nav, .f-button')) return;",
+    "    if (closePreview()) { event.preventDefault(); event.stopPropagation(); }",
+    "  }, true);",
+    "})();",
+  ].join("");
+}
+
+function applyPreviewThemeToHtmlTag(
+  html: string,
+  theme: PinRenderTheme | undefined,
+): string {
+  if (!theme) return html;
+  return html.replace(/<html\b([^>]*)>/i, (_full, attrs: string) => {
+    if (/data-termcanvas-theme\s*=/.test(attrs)) {
+      return `<html${attrs}>`;
+    }
+    return `<html${attrs} data-termcanvas-theme="${theme}">`;
+  });
 }
 
 function escapeHtml(s: string): string {

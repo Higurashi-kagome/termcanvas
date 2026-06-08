@@ -106,6 +106,7 @@ test("full html documents get sandbox CSP while preserving local scripts", async
     isHtmlDocument,
     renderHtmlDocumentWithAttachments,
   } = await getMarkdownUtils();
+  globalThis.window.document.documentElement.setAttribute("data-theme", "light");
   const html = renderHtmlDocumentWithAttachments(
     `<!doctype html>
     <html>
@@ -124,6 +125,10 @@ test("full html documents get sandbox CSP while preserving local scripts", async
 
   assert.equal(isHtmlDocument(html), true);
   assert.ok(
+    html.includes('data-termcanvas-theme="light"'),
+    "iframe document should inherit the current app theme",
+  );
+  assert.ok(
     html.includes("connect-src 'none'"),
     "sandbox document should receive TermCanvas CSP",
   );
@@ -131,6 +136,14 @@ test("full html documents get sandbox CSP while preserving local scripts", async
   assert.ok(!html.includes("default-src *"), "caller CSP should be replaced");
   assert.ok(html.includes("<style>"), "local styles should survive");
   assert.ok(html.includes("<script>"), "local scripts should survive");
+  assert.ok(
+    html.includes(".fancybox__backdrop"),
+    "fancybox backdrop should be themed inside iframe html",
+  );
+  assert.ok(
+    html.includes("window.Fancybox"),
+    "iframe html should inject the fancybox close bridge",
+  );
   assert.ok(
     html.includes('src="tc-attachment://local/tmp/pin-aa11.attachments/shot.png"'),
     "full html doc image refs should resolve to pin attachments",

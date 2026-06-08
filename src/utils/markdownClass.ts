@@ -18,6 +18,7 @@ const PIN_HTML_CSP = [
 ].join("; ");
 const HTML_DOCUMENT_RE =
   /^\s*(?:<!doctype\s+html[^>]*>|<html[\s>]|<head[\s>]|<body[\s>])/i;
+type PreviewTheme = "dark" | "light";
 
 function sanitizeHtml(html: string): string {
   return DOMPurify.sanitize(html, {
@@ -77,9 +78,11 @@ export function renderHtmlDocumentWithAttachments(
   text: string,
   attachmentsUrl: string | undefined,
 ): string {
+  const theme = getPreviewTheme();
+  const previewHeadInner = buildHtmlPreviewHeadInner(theme);
   const parsed = parseHtmlDocument(text);
   if (!parsed) {
-    return `<!doctype html><html><head>${pinHtmlCspMeta()}</head><body>${sanitizeHtml(
+    return `<!doctype html><html data-termcanvas-theme="${theme}"><head>${previewHeadInner}</head><body>${sanitizeHtml(
       text,
     )}</body></html>`;
   }
@@ -98,7 +101,8 @@ export function renderHtmlDocumentWithAttachments(
         el.remove();
       }
     });
-  head.insertAdjacentHTML("afterbegin", pinHtmlCspMeta());
+  parsed.documentElement.setAttribute("data-termcanvas-theme", theme);
+  head.insertAdjacentHTML("afterbegin", previewHeadInner);
   rewriteRelativeAttachmentMediaInRoot(
     parsed,
     normalizeAttachmentsUrl(attachmentsUrl),
@@ -184,6 +188,97 @@ function pinHtmlCspMeta(): string {
   return `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(
     PIN_HTML_CSP,
   )}">`;
+}
+
+function getPreviewTheme(): PreviewTheme {
+  const doc = getDocument();
+  const attr = doc?.documentElement.getAttribute("data-theme");
+  if (attr === "light" || attr === "dark") return attr;
+  try {
+    const saved = getWindow()?.localStorage?.getItem("termcanvas-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {}
+  return "dark";
+}
+
+function buildHtmlPreviewHeadInner(theme: PreviewTheme): string {
+  return [
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    pinHtmlCspMeta(),
+    `<style>${buildHtmlPreviewStyles(theme)}</style>`,
+    `<script>${buildHtmlPreviewBridgeScript()}</script>`,
+  ].join("");
+}
+
+function buildHtmlPreviewStyles(theme: PreviewTheme): string {
+  if (theme === "light") {
+    return [
+      ':root{--tc-preview-bg:#eae8e4;--tc-preview-surface:#f3f2ef;--tc-preview-surface-hover:#e5e3df;--tc-preview-border:#dbd8d3;--tc-preview-text:#1c1917;--tc-preview-text-muted:#57534e;--tc-preview-accent:#44403c;--tc-preview-scrim:rgba(28,25,23,0.42);}',
+      'html[data-termcanvas-theme="light"]{color-scheme:light;}',
+      "body{background:var(--tc-preview-bg);color:var(--tc-preview-text);}",
+      "a{color:var(--tc-preview-accent);}",
+      "img{border-radius:8px;border:1px solid var(--tc-preview-border);background:var(--tc-preview-surface);}",
+      "pre,code,kbd,samp{background:var(--tc-preview-surface);}",
+      "table,td,th{border-color:var(--tc-preview-border);}",
+      "th{background:var(--tc-preview-surface-hover);}",
+      ".fancybox__backdrop{background:var(--tc-preview-scrim)!important;}",
+      ".fancybox__container,.fancybox__toolbar,.fancybox__footer,.fancybox__caption{color:var(--tc-preview-text)!important;}",
+      ".fancybox__toolbar,.fancybox__footer{background:color-mix(in srgb,var(--tc-preview-bg) 88%,transparent)!important;}",
+      ".f-button{background:var(--tc-preview-surface)!important;color:var(--tc-preview-text)!important;border:1px solid var(--tc-preview-border)!important;}",
+      ".f-button:hover{background:var(--tc-preview-surface-hover)!important;}",
+    ].join("");
+  }
+  return [
+    ':root{--tc-preview-bg:#1a1918;--tc-preview-surface:#222120;--tc-preview-surface-hover:#2a2928;--tc-preview-border:#333231;--tc-preview-text:#e4e2df;--tc-preview-text-muted:#918e89;--tc-preview-accent:#c4c0b8;--tc-preview-scrim:rgba(0,0,0,0.55);}',
+    'html[data-termcanvas-theme="dark"]{color-scheme:dark;}',
+    "body{background:var(--tc-preview-bg);color:var(--tc-preview-text);}",
+    "a{color:var(--tc-preview-accent);}",
+    "img{border-radius:8px;border:1px solid var(--tc-preview-border);background:var(--tc-preview-surface);}",
+    "pre,code,kbd,samp{background:var(--tc-preview-surface);}",
+    "table,td,th{border-color:var(--tc-preview-border);}",
+    "th{background:var(--tc-preview-surface-hover);}",
+    ".fancybox__backdrop{background:var(--tc-preview-scrim)!important;}",
+    ".fancybox__container,.fancybox__toolbar,.fancybox__footer,.fancybox__caption{color:var(--tc-preview-text)!important;}",
+    ".fancybox__toolbar,.fancybox__footer{background:color-mix(in srgb,var(--tc-preview-bg) 88%,transparent)!important;}",
+    ".f-button{background:var(--tc-preview-surface)!important;color:var(--tc-preview-text)!important;border:1px solid var(--tc-preview-border)!important;}",
+    ".f-button:hover{background:var(--tc-preview-surface-hover)!important;}",
+  ].join("");
+}
+
+function buildHtmlPreviewBridgeScript(): string {
+  return [
+    "(function(){",
+    "  function closePreview(){",
+    "    try {",
+    "      var fancybox = window.Fancybox;",
+    "      if (!fancybox) return false;",
+    "      var instance = typeof fancybox.getInstance === 'function' ? fancybox.getInstance() : null;",
+    "      if (instance && typeof instance.close === 'function') { instance.close(); return true; }",
+    "      if (typeof fancybox.close === 'function') { fancybox.close(); return true; }",
+    "    } catch {}",
+    "    return false;",
+    "  }",
+    "  document.addEventListener('keydown', function(event){",
+    "    if (event.key !== 'Escape') return;",
+    "    if (!closePreview()) return;",
+    "    event.preventDefault();",
+    "    event.stopPropagation();",
+    "  }, true);",
+    "  document.addEventListener('click', function(event){",
+    "    var target = event.target;",
+    "    if (!(target instanceof Element)) return;",
+    "    if (target.closest('[data-fancybox-close], .fancybox__backdrop')) {",
+    "      if (closePreview()) { event.preventDefault(); event.stopPropagation(); }",
+    "      return;",
+    "    }",
+    "    var container = target.closest('.fancybox__container');",
+    "    if (!container) return;",
+    "    if (target.closest('.fancybox__content, .fancybox__toolbar, .fancybox__footer, .fancybox__nav, .f-button')) return;",
+    "    if (closePreview()) { event.preventDefault(); event.stopPropagation(); }",
+    "  }, true);",
+    "})();",
+  ].join("");
 }
 
 function escapeAttr(s: string): string {
