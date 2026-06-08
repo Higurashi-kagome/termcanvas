@@ -49,7 +49,9 @@ test("normalizePinRenderOptions clamps dimensions and wait time", () => {
   assert.equal(options.fullPage, true);
   assert.equal(
     options.outputPath,
-    path.join("/repo", ".termcanvas", "pin-renders", "pin-aa11", "latest.png"),
+    path.resolve(
+      path.join("/repo", ".termcanvas", "pin-renders", "pin-aa11", "latest.png"),
+    ),
   );
 });
 
