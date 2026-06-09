@@ -143,6 +143,43 @@ test("getProjectDiff preserves unicode untracked paths", async () => {
   });
 });
 
+test("getProjectDiff preserves unicode tracked paths", async () => {
+  await withTempRepo(async (repoPath) => {
+    const unicodeName = "Redis 集群搭建（Cluster 模式）.md";
+    const unicodePath = path.join(repoPath, unicodeName);
+
+    fs.writeFileSync(unicodePath, "before\n");
+    execSync(`git add -- "${unicodeName}"`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execSync('git commit -m "init"', {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    fs.writeFileSync(unicodePath, "before\nafter\n");
+
+    const result = await getProjectDiff(repoPath);
+    assert.deepEqual(result.files.map((file) => file.name), [unicodeName]);
+    assert.match(result.diff, new RegExp(`diff --git a/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} b/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.doesNotMatch(result.diff, /\\[0-7]{3}/);
+
+    const summary = await getApiDiff(repoPath, true);
+    assert.deepEqual(summary.files, [
+      {
+        name: unicodeName,
+        additions: 1,
+        deletions: 0,
+        binary: false,
+      },
+    ]);
+
+    const full = await getApiDiff(repoPath, false);
+    assert.match(full.diff, new RegExp(`diff --git a/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} b/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.doesNotMatch(full.diff, /\\[0-7]{3}/);
+  });
+});
+
 test("getApiDiff preserves existing summary shape", async () => {
   await withTempRepo(async (repoPath) => {
     const trackedPath = path.join(repoPath, "tracked.txt");

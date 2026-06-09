@@ -9,6 +9,7 @@ import {
   checkoutGitRef,
   getGitBranches,
   getGitCommitDetail,
+  getFileDiff,
   getGitLog,
   initGitRepo,
   isGitRepo,
@@ -177,5 +178,50 @@ test("getGitCommitDetail returns null for a missing commit hash", async () => {
     );
 
     assert.equal(detail, null);
+  });
+});
+
+test("getGitCommitDetail and file diff preserve unicode tracked paths", async () => {
+  await withTempRepo(async (repoPath) => {
+    const unicodeName = "Redis 集群搭建（Cluster 模式）.md";
+    const unicodePath = path.join(repoPath, unicodeName);
+
+    fs.writeFileSync(unicodePath, "before\n");
+    execSync(`git add -- "${unicodeName}"`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execSync('git commit -m "init"', {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    fs.writeFileSync(unicodePath, "before\nafter\n");
+    execSync(`git add -- "${unicodeName}"`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execSync('git commit -m "update unicode file"', {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const hash = execSync("git rev-parse HEAD", {
+      cwd: repoPath,
+      stdio: "pipe",
+    }).toString().trim();
+    const detail = await getGitCommitDetail(repoPath, hash);
+
+    assert.ok(detail);
+    assert.equal(detail.files.some((file) => file.name === unicodeName), true);
+    assert.match(
+      detail.diff,
+      new RegExp(`diff --git a/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} b/${unicodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
+    assert.doesNotMatch(detail.diff, /\\[0-7]{3}/);
+
+    fs.writeFileSync(unicodePath, "before\nafter\nfinal\n");
+    const fileDiff = await getFileDiff(repoPath, unicodeName, false);
+    assert.equal(fileDiff.hunks.length > 0, true);
   });
 });

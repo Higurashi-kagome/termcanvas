@@ -6,6 +6,7 @@ import { parseNulSeparatedGitPaths } from "./git-paths";
 
 const execFileAsync = promisify(execFile);
 const MAX_FILE_CONCURRENCY = 5;
+const GIT_QUOTE_PATH_CONFIG = ["-c", "core.quotepath=false"];
 const IMAGE_EXTS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico",
 ]);
@@ -66,7 +67,7 @@ async function execGitText(
   args: string[],
   maxBuffer?: number,
 ): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
+  const { stdout } = await execFileAsync("git", [...GIT_QUOTE_PATH_CONFIG, ...args], {
     cwd: worktreePath,
     encoding: "utf-8",
     ...(maxBuffer ? { maxBuffer } : {}),
@@ -79,7 +80,7 @@ async function execGitBuffer(
   args: string[],
   maxBuffer?: number,
 ): Promise<Buffer> {
-  const { stdout } = await execFileAsync("git", args, {
+  const { stdout } = await execFileAsync("git", [...GIT_QUOTE_PATH_CONFIG, ...args], {
     cwd: worktreePath,
     encoding: "buffer",
     ...(maxBuffer ? { maxBuffer } : {}),

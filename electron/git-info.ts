@@ -6,6 +6,7 @@ import type { ProjectDiffFile } from "./git-diff";
 
 const execFileAsync = promisify(execFile);
 const EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const GIT_QUOTE_PATH_CONFIG = ["-c", "core.quotepath=false"];
 const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -101,7 +102,7 @@ async function execGitText(
   args: string[],
   maxBuffer = DEFAULT_MAX_BUFFER,
 ): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
+  const { stdout } = await execFileAsync("git", [...GIT_QUOTE_PATH_CONFIG, ...args], {
     cwd: worktreePath,
     encoding: "utf-8",
     maxBuffer,
