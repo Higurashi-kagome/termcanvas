@@ -73,6 +73,98 @@ test("resize swallows exited PTY errors and evicts the stale instance", async ()
   assert.equal(manager.outputBuffers.has(7), false);
 });
 
+test("destroy uses PTY native kill on Windows instead of negative PID process kill", async () => {
+  const { PtyManager } = await import(
+    `../electron/pty-manager.ts?destroy-win32=${Date.now()}`,
+  );
+  const manager = new PtyManager() as PtyManager & {
+    instances: Map<number, { pid: number; kill: () => void }>;
+    outputBuffers: Map<number, string[]>;
+    deps: { platform: NodeJS.Platform };
+  };
+
+  let nativeKillCalls = 0;
+  manager.instances.set(7, {
+    pid: 4321,
+    kill() {
+      nativeKillCalls += 1;
+    },
+  });
+  manager.outputBuffers.set(7, ["old output"]);
+  manager.deps.platform = "win32";
+
+  const originalKill = process.kill;
+  const processKillCalls: Array<{ pid: number; signal?: NodeJS.Signals | 0 }> = [];
+  (process as typeof process & {
+    kill: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
+  }).kill = ((pid: number, signal?: NodeJS.Signals | 0) => {
+    processKillCalls.push({ pid, signal });
+    if (signal === 0) {
+      const error = new Error("missing process") as NodeJS.ErrnoException;
+      error.code = "ESRCH";
+      throw error;
+    }
+    return true;
+  }) as typeof process.kill;
+
+  try {
+    await manager.destroy(7);
+  } finally {
+    process.kill = originalKill;
+  }
+
+  assert.equal(nativeKillCalls, 1);
+  assert.deepEqual(processKillCalls, []);
+  assert.equal(manager.instances.has(7), false);
+  assert.equal(manager.outputBuffers.has(7), false);
+});
+
+test("resize fallback uses PTY native kill on Windows when resize throws", async () => {
+  const { PtyManager } = await import(
+    `../electron/pty-manager.ts?resize-win32-kill=${Date.now()}`,
+  );
+  const manager = new PtyManager() as PtyManager & {
+    instances: Map<number, { pid: number; resize: () => void; kill: () => void }>;
+    outputBuffers: Map<number, string[]>;
+    deps: { platform: NodeJS.Platform };
+  };
+
+  let nativeKillCalls = 0;
+  manager.instances.set(7, {
+    pid: 4321,
+    resize() {
+      throw new Error("Cannot resize a pty that has already exited");
+    },
+    kill() {
+      nativeKillCalls += 1;
+    },
+  });
+  manager.outputBuffers.set(7, ["old output"]);
+  manager.deps.platform = "win32";
+
+  const originalKill = process.kill;
+  const processKillCalls: Array<{ pid: number; signal?: NodeJS.Signals | 0 }> = [];
+  (process as typeof process & {
+    kill: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
+  }).kill = ((pid: number, signal?: NodeJS.Signals | 0) => {
+    processKillCalls.push({ pid, signal });
+    return true;
+  }) as typeof process.kill;
+
+  try {
+    assert.doesNotThrow(() => {
+      manager.resize(7, 120, 40);
+    });
+  } finally {
+    process.kill = originalKill;
+  }
+
+  assert.equal(nativeKillCalls, 1);
+  assert.deepEqual(processKillCalls, []);
+  assert.equal(manager.instances.has(7), false);
+  assert.equal(manager.outputBuffers.has(7), false);
+});
+
 test(
   "create retries transient PTY spawn failures before surfacing an error",
   { skip: process.platform === "win32" },

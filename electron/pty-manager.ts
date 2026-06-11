@@ -9,6 +9,7 @@ type BuildLaunchSpecFn = typeof buildLaunchSpec;
 interface PtyManagerDeps {
   spawn: PtySpawnFn;
   buildLaunchSpec: BuildLaunchSpecFn;
+  platform: NodeJS.Platform;
 }
 
 const RETRYABLE_PTY_SPAWN_ERRORS = [
@@ -38,6 +39,7 @@ export class PtyManager {
     this.deps = {
       spawn: pty.spawn,
       buildLaunchSpec,
+      platform: process.platform,
       ...deps,
     };
   }
@@ -132,14 +134,9 @@ export class PtyManager {
     try {
       this.instances.get(id)?.resize(cols, rows);
     } catch {
-      // Kill the process group before removing from map to prevent orphans.
       const inst = this.instances.get(id);
-      if (inst && inst.pid > 1) {
-        try {
-          process.kill(-inst.pid, "SIGHUP");
-        } catch {
-          // Process group may already be gone.
-        }
+      if (inst) {
+        this.terminatePty(inst);
       }
       this.instances.delete(id);
       this.outputBuffers.delete(id);
@@ -202,8 +199,14 @@ export class PtyManager {
     this.instances.delete(id);
     this.outputBuffers.delete(id);
 
+    if (this.deps.platform === "win32") {
+      this.terminatePty(instance);
+      return;
+    }
+
     // Send SIGHUP to the entire process group (shell + CLI + MCP servers).
-    // the master PTY FD close triggers SIGHUP to the session, giving
+    // The master PTY FD close triggers SIGHUP to the session, giving
+    // interactive CLIs a chance to shut down cleanly before escalation.
     if (pid > 1) {
       try {
         process.kill(-pid, "SIGHUP");
@@ -236,6 +239,14 @@ export class PtyManager {
   async destroyAll(): Promise<void> {
     const ids = [...this.instances.keys()];
     await Promise.all(ids.map((id) => this.destroy(id)));
+  }
+
+  private terminatePty(instance: pty.IPty): void {
+    try {
+      instance.kill();
+    } catch {
+      // Ignore terminal teardown races; the PTY may already be gone.
+    }
   }
 }
 
