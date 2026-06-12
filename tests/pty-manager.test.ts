@@ -197,3 +197,34 @@ test(
     assert.equal(attempts, 2);
   },
 );
+
+test("create retries transient Windows PTY spawn failures", async () => {
+  let attempts = 0;
+  const { PtyManager } = await import(
+    `../electron/pty-manager.ts?retry-win32=${Date.now()}`,
+  );
+  const manager = new PtyManager({
+    buildLaunchSpec: async () => ({
+      cwd: process.cwd(),
+      file: "pwsh.exe",
+      args: [],
+      env: {},
+    }),
+    spawn: ((..._args: unknown[]) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("ConnectNamedPipe failed: The pipe is being closed.");
+      }
+      return { pid: 9876 };
+    }) as typeof import("node-pty").spawn,
+    platform: "win32",
+  });
+
+  const id = await manager.create({
+    cwd: process.cwd(),
+  });
+
+  assert.equal(id, 1);
+  assert.equal(manager.getPid(id), 9876);
+  assert.equal(attempts, 2);
+});

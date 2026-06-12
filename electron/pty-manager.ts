@@ -16,6 +16,8 @@ const RETRYABLE_PTY_SPAWN_ERRORS = [
   /posix_spawnp failed/i,
   /forkpty\(3\) failed/i,
   /device not configured/i,
+  /connectnamedpipe failed/i,
+  /the pipe is being closed/i,
 ];
 const MAX_PTY_CREATE_ATTEMPTS = 3;
 
