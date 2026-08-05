@@ -123,6 +123,32 @@ function replayTimelineWithTools(): ReplayTimeline {
   };
 }
 
+function replayTimelineWithLinks(): ReplayTimeline {
+  return {
+    sessionId: "session-links",
+    projectDir: "/repo",
+    filePath: "/home/user/.codex/sessions/session-links.jsonl",
+    startedAt: "2026-05-28T00:00:00.000Z",
+    endedAt: "2026-05-28T00:01:00.000Z",
+    totalTokens: 10,
+    editIndices: [],
+    events: [
+      event(
+        0,
+        "user_prompt",
+        "Open [this file](file:///tmp/outside.md:181)",
+      ),
+      event(1, "assistant_text", "![image](file:///tmp/outside.png:42:3)"),
+      event(
+        2,
+        "user_prompt",
+        "See [the web](https://example.com) and [source](E:/GitHub/open-source/termcanvas/src/stores/canvasStore.ts:181)",
+      ),
+      event(3, "assistant_text", "Done"),
+    ],
+  };
+}
+
 async function renderReplay(timeline: ReplayTimeline = replayTimeline()) {
   const dom = installDom();
   let root: Root | null = null;
@@ -694,6 +720,95 @@ test("SessionReplayView keeps copy buttons while text becomes selectable", async
       ),
       "reply copy button should remain",
     );
+  } finally {
+    await rendered.cleanup();
+  }
+});
+
+test("SessionReplayView tries every local file target through the file drawer", async () => {
+  const originalOpenFileEditor = useCanvasStore.getState().openFileEditor;
+  const openedPaths: string[] = [];
+  useCanvasStore.setState({
+    openFileEditor: (filePath) => openedPaths.push(filePath),
+  });
+
+  const rendered = await renderReplay(replayTimelineWithLinks());
+  try {
+    const fileLink = document.querySelector(
+      '[data-tc-file-href="file:///tmp/outside.md:181"]',
+    );
+    assert.ok(fileLink, "file URL should render as a clickable target");
+    await act(async () => {
+      fileLink?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    const imageLink = document.querySelector(
+      '[data-tc-file-href="file:///tmp/outside.png:42:3"]',
+    );
+    assert.ok(imageLink, "image file URL should render as a clickable target");
+    await act(async () => {
+      imageLink?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    Object.defineProperty(window, "termcanvas", {
+      configurable: true,
+      value: { app: { platform: "win32" } },
+    });
+    const sourceLink = document.querySelector(
+      '[data-tc-file-href="E:/GitHub/open-source/termcanvas/src/stores/canvasStore.ts:181"]',
+    );
+    assert.ok(sourceLink, "Windows source references should render as file targets");
+    await act(async () => {
+      sourceLink?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    assert.deepEqual(
+      openedPaths,
+      [
+        "/tmp/outside.md",
+        "/tmp/outside.png",
+        "E:\\GitHub\\open-source\\termcanvas\\src\\stores\\canvasStore.ts",
+      ],
+      "file targets outside the session project should still be attempted",
+    );
+  } finally {
+    await act(async () => {
+      useCanvasStore.setState({ openFileEditor: originalOpenFileEditor });
+    });
+    await rendered.cleanup();
+  }
+});
+
+test("SessionReplayView opens remote links through the external app bridge", async () => {
+  const rendered = await renderReplay(replayTimelineWithLinks());
+  const openedUrls: string[] = [];
+  Object.defineProperty(window, "termcanvas", {
+    configurable: true,
+    value: {
+      app: {
+        platform: "linux",
+        openExternal: async (url: string) => {
+          openedUrls.push(url);
+        },
+      },
+    },
+  });
+
+  try {
+    const link = document.querySelector('a[href="https://example.com"]');
+    assert.ok(link, "remote link should render");
+    await act(async () => {
+      link?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    assert.deepEqual(openedUrls, ["https://example.com"]);
   } finally {
     await rendered.cleanup();
   }

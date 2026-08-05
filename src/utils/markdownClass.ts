@@ -1,4 +1,4 @@
-import { Marked, marked } from "marked";
+import { Marked } from "marked";
 import DOMPurify from "dompurify";
 
 const ALLOWED_URI_REGEXP =
@@ -21,9 +21,29 @@ const HTML_DOCUMENT_RE =
 type PreviewTheme = "dark" | "light";
 
 function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  const purifier =
+    typeof window === "undefined" ? DOMPurify : DOMPurify(window);
+  return purifier.sanitize(html, {
     ALLOWED_URI_REGEXP,
+    ADD_ATTR: ["target"],
   });
+}
+
+export const MARKDOWN_FILE_HREF_ATTR = "data-tc-file-href";
+
+export function isHttpMarkdownHref(href: string): boolean {
+  return /^(?:https?:\/\/|\/\/)/i.test(href.trim());
+}
+
+export function isLocalMarkdownHref(href: string): boolean {
+  const value = href.trim();
+  if (!value || value.startsWith("#") || value.startsWith("?")) return false;
+  if (isHttpMarkdownHref(value)) return false;
+  if (/^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value)) return true;
+  if (/^[a-z][a-z\d+.-]*:/i.test(value)) {
+    return /^(?:file|sandbox):/i.test(value);
+  }
+  return true;
 }
 
 export const markdownClassName =
@@ -42,8 +62,45 @@ export const markdownClassName =
   "[&_hr]:border-[var(--border)] " +
   "[&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_img]:border [&_img]:border-[var(--border)] [&_img]:my-2";
 
+const sessionMarkdown = new Marked({
+  async: false,
+  breaks: true,
+  renderer: {
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+      if (isLocalMarkdownHref(href)) {
+        return `<a href="#" ${MARKDOWN_FILE_HREF_ATTR}="${escapeAttr(href)}"${titleAttr}>${text}</a>`;
+      }
+
+      const safeHref = escapeAttr(href);
+      const externalAttrs = isHttpMarkdownHref(href)
+        ? ' target="_blank" rel="noopener noreferrer"'
+        : "";
+      return `<a href="${safeHref}"${externalAttrs}${titleAttr}>${text}</a>`;
+    },
+    image({ href, title, text, tokens }) {
+      const alt = tokens
+        ? this.parser.parseInline(tokens, this.parser.textRenderer)
+        : text ?? "";
+      const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+      if (isLocalMarkdownHref(href)) {
+        const label = escapeAttr(alt || href);
+        return `<a href="#" ${MARKDOWN_FILE_HREF_ATTR}="${escapeAttr(href)}" data-tc-file-image="true"${titleAttr}>${label}</a>`;
+      }
+
+      const safeHref = escapeAttr(href);
+      const safeAlt = escapeAttr(alt);
+      const img = `<img src="${safeHref}" alt="${safeAlt}"${titleAttr} loading="lazy" />`;
+      return isHttpMarkdownHref(href)
+        ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${img}</a>`
+        : img;
+    },
+  },
+});
+
 export function renderMarkdown(text: string): string {
-  const html = marked.parse(text, { async: false, breaks: true }) as string;
+  const html = sessionMarkdown.parse(text) as string;
   return sanitizeHtml(html);
 }
 

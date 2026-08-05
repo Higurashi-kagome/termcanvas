@@ -41,6 +41,40 @@ test("plain markdown round-trips through sanitize", async () => {
   assert.ok(html.includes("<code>code</code>"), "code should survive");
 });
 
+test("replay markdown marks external media and local file refs", async () => {
+  const { renderMarkdown } = await getMarkdownUtils();
+  const html = renderMarkdown(
+    "[web](https://example.com)\n\n![remote](https://example.com/shot.png)\n\n[file](file:///tmp/report.md)\n\n![local](../images/shot.png)\n\n[sandbox](sandbox:/mnt/data/report.txt)",
+  );
+
+  assert.ok(
+    html.includes(
+      '<a href="https://example.com" target="_blank" rel="noopener noreferrer">web</a>',
+    ),
+    "external links should open outside the app",
+  );
+  assert.ok(
+    html.includes(
+      '<a href="https://example.com/shot.png" target="_blank" rel="noopener noreferrer"><img',
+    ),
+    "remote images should be clickable",
+  );
+  assert.ok(
+    html.includes('data-tc-file-href="file:///tmp/report.md"'),
+    "file URLs should be preserved as controlled file targets",
+  );
+  assert.ok(
+    html.includes(
+      'data-tc-file-href="../images/shot.png" data-tc-file-image="true"',
+    ),
+    "local images should use the file target path",
+  );
+  assert.ok(
+    html.includes('data-tc-file-href="sandbox:/mnt/data/report.txt"'),
+    "sandbox file URLs should be preserved as controlled file targets",
+  );
+});
+
 test("markdown class restores list markers after tailwind preflight reset", async () => {
   const { markdownClassName } = await getMarkdownUtils();
   assert.match(

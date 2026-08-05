@@ -10,7 +10,13 @@ import { createTerminal } from "../stores/projectStore";
 import { panToTerminal } from "../utils/panToTerminal";
 import type { TerminalType } from "../types";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
-import { markdownClassName, renderMarkdown } from "../utils/markdownClass";
+import {
+  MARKDOWN_FILE_HREF_ATTR,
+  isHttpMarkdownHref,
+  isLocalMarkdownHref,
+  markdownClassName,
+  renderMarkdown,
+} from "../utils/markdownClass";
 import { resolveReplayResumeTarget } from "./sessionReplayModel.ts";
 import { PromptJumpNav } from "./SessionReplayPromptNav.tsx";
 import {
@@ -89,6 +95,81 @@ function providerFromFilePath(filePath: string): TerminalType | null {
   if (normalized.includes("/.claude/")) return "claude";
   if (normalized.includes("/.codex/")) return "codex";
   return null;
+}
+
+type ReplayPlatform = "darwin" | "win32" | "linux";
+
+function decodeReplayPath(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeReplayPath(value: string, platform: ReplayPlatform): string {
+  return platform === "win32"
+    ? value.replace(/\//g, "\\")
+    : value.replace(/\\/g, "/");
+}
+
+function stripReplaySourceLocation(value: string): string {
+  return value.replace(/:\d+(?::\d+)?$/, "");
+}
+
+function replayFileUrlToPath(
+  href: string,
+  platform: ReplayPlatform,
+): string | null {
+  try {
+    const url = new URL(href);
+    const pathname = decodeReplayPath(url.pathname);
+    if (!pathname) return null;
+    const normalized = normalizeReplayPath(pathname, platform);
+    if (url.hostname && url.hostname !== "localhost") {
+      return platform === "win32"
+        ? `\\\\${url.hostname}${normalized}`
+        : `//${url.hostname}${normalized}`;
+    }
+    if (platform === "win32") {
+      return normalized.replace(/^\\([A-Za-z]:)/, "$1");
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+function resolveReplayFilePath(
+  href: string,
+  projectDir: string,
+  platform: ReplayPlatform,
+): string | null {
+  const value = stripReplaySourceLocation(href.trim());
+  if (!value) return null;
+
+  if (/^(?:file|sandbox):/i.test(value)) {
+    return replayFileUrlToPath(value, platform);
+  }
+
+  const normalized = normalizeReplayPath(decodeReplayPath(value), platform);
+  const isAbsolute =
+    platform === "win32"
+      ? /^(?:[A-Za-z]:[\\/]|\\\\|\\)/.test(normalized)
+      : normalized.startsWith("/");
+  if (isAbsolute) return normalized;
+  if (!projectDir) return normalized.replace(/^\.([\\/])/, "");
+
+  const separator = platform === "win32" ? "\\" : "/";
+  const base = projectDir.replace(/[\\/]+$/, "");
+  const relative = normalized.startsWith(`.${separator}`)
+    ? normalized.slice(2)
+    : normalized;
+  return `${base}${separator}${relative}`;
+}
+
+function normalizeReplayHttpHref(href: string): string {
+  return href.trim().startsWith("//") ? `https:${href.trim()}` : href.trim();
 }
 
 /**
@@ -1149,6 +1230,7 @@ export function SessionReplayView() {
   const currentIndex = useSessionStore((s) => s.replayCurrentIndex);
   const exitReplay = useSessionStore((s) => s.exitReplay);
   const closeSessionsOverlay = useCanvasStore((s) => s.closeSessionsOverlay);
+  const openFileEditor = useCanvasStore((s) => s.openFileEditor);
   const seekTo = useSessionStore((s) => s.seekTo);
   const { notify } = useNotificationStore();
   const t = useT();
@@ -1446,6 +1528,55 @@ export function SessionReplayView() {
     return () => observer.disconnect();
   }, [promptItems, showPromptNav]);
 
+  const handleMarkdownClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const openFileHref = (href: string) => {
+        const platform =
+          window.termcanvas?.app?.platform ?? ("linux" as ReplayPlatform);
+        const filePath = resolveReplayFilePath(
+          href,
+          timeline?.projectDir ?? "",
+          platform,
+        );
+        if (filePath) openFileEditor(filePath);
+      };
+
+      const anchor = target.closest("a");
+      const fileHref = anchor?.getAttribute(MARKDOWN_FILE_HREF_ATTR);
+      if (fileHref) {
+        event.preventDefault();
+        event.stopPropagation();
+        openFileHref(fileHref);
+        return;
+      }
+
+      const href =
+        anchor?.getAttribute("href") ??
+        target.closest("img")?.getAttribute("src");
+      if (href && isLocalMarkdownHref(href)) {
+        event.preventDefault();
+        event.stopPropagation();
+        openFileHref(href);
+        return;
+      }
+      if (!href || !isHttpMarkdownHref(href)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const externalHref = normalizeReplayHttpHref(href);
+      const openExternal = window.termcanvas?.app?.openExternal;
+      if (openExternal) {
+        void openExternal(externalHref);
+      } else {
+        window.open(externalHref, "_blank", "noopener,noreferrer");
+      }
+    },
+    [openFileEditor, timeline?.projectDir],
+  );
+
   // Loading / error panels — same shape as before.
   if (!timeline) {
     return (
@@ -1538,7 +1669,11 @@ export function SessionReplayView() {
         promptNavAction={promptNavAction}
       />
 
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 min-h-0 overflow-y-auto px-3"
+        onClick={handleMarkdownClick}
+      >
         <div className="mx-auto max-w-[720px] py-4 space-y-6">
           {turns.map((turn, turnIdx) => {
             const nodes = buildAssistantNodes(turn.assistantEvents);
