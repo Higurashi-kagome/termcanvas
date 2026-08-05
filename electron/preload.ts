@@ -841,6 +841,8 @@ contextBridge.exposeInMainWorld("termcanvas", {
   app: {
     homePath: process.env.HOME ?? process.env.USERPROFILE ?? "",
     platform: process.platform as "darwin" | "win32" | "linux",
+    openExternal: (url: string) =>
+      ipcRenderer.invoke("app:open-external", url) as Promise<void>,
     requestClose: () => ipcRenderer.send("app:request-close"),
     setQuitOnLastWindowClosed: (value: boolean) =>
       ipcRenderer.send("app:set-quit-on-last-window-closed", value),

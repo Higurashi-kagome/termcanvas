@@ -2239,6 +2239,11 @@ function setupIpc() {
     return getDeviceId();
   });
 
+  ipcMain.handle("app:open-external", async (_event, url: unknown) => {
+    if (typeof url !== "string" || !isSafeExternalUrl(url)) return;
+    await shell.openExternal(url);
+  });
+
   ipcMain.on("app:request-close", () => {
     if (mainWindow) {
       mainWindow.close();

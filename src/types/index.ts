@@ -1086,6 +1086,7 @@ export interface TermCanvasAPI {
   app: {
     homePath: string;
     platform: "darwin" | "win32" | "linux";
+    openExternal: (url: string) => Promise<void>;
     requestClose: () => void;
     setQuitOnLastWindowClosed: (value: boolean) => void;
   };

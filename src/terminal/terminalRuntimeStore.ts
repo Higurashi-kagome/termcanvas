@@ -1295,7 +1295,7 @@ function registerModifierAwareLinkProvider(
           decorations: { underline: modifierHeld, pointerCursor: modifierHeld },
           activate(_event, linkText) {
             if (_event.metaKey || _event.ctrlKey) {
-              window.open(linkText);
+              void window.termcanvas.app.openExternal(linkText);
             }
           },
           dispose() {
@@ -1334,6 +1334,11 @@ function createTerminalRenderer(
     // xterm exposes that API behind the proposed API gate.
     allowProposedApi: true,
     allowTransparency: false,
+    linkHandler: {
+      activate(_event, linkText) {
+        void window.termcanvas.app.openExternal(linkText);
+      },
+    },
     cursorBlink: true,
     cursorStyle: "bar",
     cursorWidth: 2,
