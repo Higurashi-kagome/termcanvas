@@ -35,6 +35,37 @@ export const COLLAPSED_TAB_WIDTH = 32;
 // inset so terminals reflow instead of getting occluded.
 export const PIN_DRAWER_WIDTH = 320;
 
+export type CanvasSurface = "file" | "pin" | "usage" | "sessions";
+export const CANVAS_SURFACE_BASE_Z_INDEX = 50;
+
+export function pushCanvasSurface(
+  stack: readonly CanvasSurface[],
+  surface: CanvasSurface,
+): CanvasSurface[] {
+  return [...stack.filter((entry) => entry !== surface), surface];
+}
+
+export function removeCanvasSurface(
+  stack: readonly CanvasSurface[],
+  surface: CanvasSurface,
+): CanvasSurface[] {
+  return stack.filter((entry) => entry !== surface);
+}
+
+export function getCanvasSurfaceZIndex(
+  stack: readonly CanvasSurface[],
+  surface: CanvasSurface,
+): number {
+  return CANVAS_SURFACE_BASE_Z_INDEX + Math.max(0, stack.indexOf(surface));
+}
+
+export function isCanvasSurfaceActive(
+  stack: readonly CanvasSurface[],
+  surface: CanvasSurface,
+): boolean {
+  return stack[stack.length - 1] === surface;
+}
+
 interface CanvasStore {
   viewport: Viewport;
   isAnimating: boolean;
@@ -57,11 +88,9 @@ interface CanvasStore {
    * covers the entire canvas area (still leaves the left panel).
    */
   fileEditorExpanded: boolean;
-  // Usage, Sessions, and the File Editor all share the canvas-gap
-  // area between the left and right side panels; at most one is
-  // visible at a time (mutual exclusion enforced in their setters).
-  // Each carries an `expanded` flag for two-level (half vs full)
-  // geometry — except Usage which is single-level.
+  // Canvas-gap pages remain mounted in open order so closing the top page
+  // reveals the page below it. Each carries its own content state.
+  surfaceStack: CanvasSurface[];
   usageOverlayOpen: boolean;
   sessionsOverlayOpen: boolean;
   sessionsOverlayExpanded: boolean;
@@ -76,6 +105,8 @@ interface CanvasStore {
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelActiveTab: (tab: RightPanelTab) => void;
   setRightPanelWidth: (width: number) => void;
+  openSurface: (surface: CanvasSurface) => void;
+  closeSurface: (surface: CanvasSurface) => void;
   openFileEditor: (filePath: string) => void;
   closeFileEditor: () => void;
   toggleFileEditorExpanded: () => void;
@@ -137,6 +168,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   leftPanelWidth: 280,
   fileEditorPath: null,
   fileEditorExpanded: true,
+  surfaceStack: [],
   usageOverlayOpen: false,
   sessionsOverlayOpen: false,
   sessionsOverlayExpanded: true,
@@ -178,66 +210,79 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({ rightPanelWidth: width });
     markDirty();
   },
-  // File editor, Usage, and Sessions replay all share the canvas-gap
-  // area between the left and right panels. At most one is visible
-  // at a time — opening one evicts the others so they never fight
-  // for the same pixels.
+  openSurface: (surface) =>
+    set((state) => ({
+      surfaceStack: pushCanvasSurface(state.surfaceStack, surface),
+    })),
+  closeSurface: (surface) =>
+    set((state) => ({
+      surfaceStack: removeCanvasSurface(state.surfaceStack, surface),
+    })),
   openFileEditor: (filePath) =>
-    set({
+    set((state) => ({
       fileEditorPath: filePath,
       fileEditorExpanded: true,
-      usageOverlayOpen: false,
-      sessionsOverlayOpen: false,
-      sessionsOverlayExpanded: false,
-    }),
+      surfaceStack: pushCanvasSurface(state.surfaceStack, "file"),
+    })),
   closeFileEditor: () =>
-    set({ fileEditorPath: null, fileEditorExpanded: false }),
+    set((state) => ({
+      fileEditorPath: null,
+      fileEditorExpanded: false,
+      surfaceStack: removeCanvasSurface(state.surfaceStack, "file"),
+    })),
   toggleFileEditorExpanded: () =>
     set((state) => ({ fileEditorExpanded: !state.fileEditorExpanded })),
   setFileEditorExpanded: (expanded) => set({ fileEditorExpanded: expanded }),
   openUsageOverlay: () =>
-    set({
+    set((state) => ({
       usageOverlayOpen: true,
-      fileEditorPath: null,
-      fileEditorExpanded: false,
-      sessionsOverlayOpen: false,
-      sessionsOverlayExpanded: false,
-    }),
-  closeUsageOverlay: () => set({ usageOverlayOpen: false }),
+      surfaceStack: pushCanvasSurface(state.surfaceStack, "usage"),
+    })),
+  closeUsageOverlay: () =>
+    set((state) => ({
+      usageOverlayOpen: false,
+      surfaceStack: removeCanvasSurface(state.surfaceStack, "usage"),
+    })),
   toggleUsageOverlay: () =>
     set((state) => {
       const nextOpen = !state.usageOverlayOpen;
-      if (!nextOpen) return { usageOverlayOpen: false };
+      if (!nextOpen) {
+        return {
+          usageOverlayOpen: false,
+          surfaceStack: removeCanvasSurface(state.surfaceStack, "usage"),
+        };
+      }
       return {
         usageOverlayOpen: true,
-        fileEditorPath: null,
-        fileEditorExpanded: false,
-        sessionsOverlayOpen: false,
-        sessionsOverlayExpanded: false,
+        surfaceStack: pushCanvasSurface(state.surfaceStack, "usage"),
       };
     }),
   openSessionsOverlay: () =>
-    set({
+    set((state) => ({
       sessionsOverlayOpen: true,
       sessionsOverlayExpanded: true,
-      fileEditorPath: null,
-      fileEditorExpanded: false,
-      usageOverlayOpen: false,
-    }),
+      surfaceStack: pushCanvasSurface(state.surfaceStack, "sessions"),
+    })),
   closeSessionsOverlay: () =>
-    set({ sessionsOverlayOpen: false, sessionsOverlayExpanded: false }),
+    set((state) => ({
+      sessionsOverlayOpen: false,
+      sessionsOverlayExpanded: false,
+      surfaceStack: removeCanvasSurface(state.surfaceStack, "sessions"),
+    })),
   toggleSessionsOverlay: () =>
     set((state) => {
       const nextOpen = !state.sessionsOverlayOpen;
       if (!nextOpen) {
-        return { sessionsOverlayOpen: false, sessionsOverlayExpanded: false };
+        return {
+          sessionsOverlayOpen: false,
+          sessionsOverlayExpanded: false,
+          surfaceStack: removeCanvasSurface(state.surfaceStack, "sessions"),
+        };
       }
       return {
         sessionsOverlayOpen: true,
         sessionsOverlayExpanded: true,
-        fileEditorPath: null,
-        fileEditorExpanded: false,
-        usageOverlayOpen: false,
+        surfaceStack: pushCanvasSurface(state.surfaceStack, "sessions"),
       };
     }),
   toggleSessionsOverlayExpanded: () =>

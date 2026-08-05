@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Pin, CreatePinInput, UpdatePinInput } from "../types";
+import { useCanvasStore } from "./canvasStore";
 
 interface TerminalPinAssignment {
   pinId: string;
@@ -85,7 +86,11 @@ export const usePinStore = create<PinStoreState & PinStoreActions>(
         };
       }),
 
-    removePin: (projectPath, id) =>
+    removePin: (projectPath, id) => {
+      const current = get();
+      const closesDetail =
+        current.openProjectPath === projectPath &&
+        current.openDetailPinId === id;
       set((state) => {
         const existing = state.pinsByProject[projectPath];
         if (!existing) return state;
@@ -111,9 +116,14 @@ export const usePinStore = create<PinStoreState & PinStoreActions>(
             state.openDetailPinId === id ? null : state.openDetailPinId,
           terminalPinMap: nextTerminalMap,
         };
-      }),
+      });
+      if (closesDetail) {
+        useCanvasStore.getState().closeSurface("pin");
+      }
+    },
 
     openDrawer: (projectPath) => {
+      const previousProjectPath = get().openProjectPath;
       if (!get().pinsByProject[projectPath]) {
         window.termcanvas.pins
           .list(projectPath)
@@ -128,29 +138,52 @@ export const usePinStore = create<PinStoreState & PinStoreActions>(
             );
           });
       }
-      set({ openProjectPath: projectPath });
+      const changedProject =
+        previousProjectPath !== null && previousProjectPath !== projectPath;
+      set({
+        openProjectPath: projectPath,
+        ...(changedProject
+          ? { openDetailPinId: null, composingForPin: null }
+          : {}),
+      });
+      if (changedProject) {
+        useCanvasStore.getState().closeSurface("pin");
+      }
     },
 
-    closeDrawer: () =>
+    closeDrawer: () => {
       set({
         openProjectPath: null,
         openDetailPinId: null,
         composingForPin: null,
-      }),
+      });
+      useCanvasStore.getState().closeSurface("pin");
+    },
 
-    openDetail: (id) => set({ openDetailPinId: id, composingForPin: null }),
+    openDetail: (id) => {
+      set({ openDetailPinId: id, composingForPin: null });
+      useCanvasStore.getState().openSurface("pin");
+    },
 
-    closeDetail: () => set({ openDetailPinId: null, composingForPin: null }),
+    closeDetail: () => {
+      set({ openDetailPinId: null, composingForPin: null });
+      useCanvasStore.getState().closeSurface("pin");
+    },
 
-    startCompose: (projectPath) =>
-      set({ composingForPin: projectPath, openDetailPinId: null }),
+    startCompose: (projectPath) => {
+      set({ composingForPin: projectPath, openDetailPinId: null });
+      useCanvasStore.getState().openSurface("pin");
+    },
 
-    cancelCompose: () => set({ composingForPin: null }),
+    cancelCompose: () => {
+      set({ composingForPin: null });
+      useCanvasStore.getState().closeSurface("pin");
+    },
 
     toggle: (projectPath) => {
-      const { openProjectPath, openDrawer } = get();
+      const { openProjectPath, openDrawer, closeDrawer } = get();
       if (openProjectPath === projectPath) {
-        set({ openProjectPath: null });
+        closeDrawer();
       } else {
         openDrawer(projectPath);
       }

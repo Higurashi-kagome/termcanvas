@@ -220,9 +220,8 @@ export function LeftPanel() {
 
   const handleOpenReplay = useCallback(
     (filePath: string) => {
-      // `openSessionsOverlay` enforces canvas-gap mutual exclusion
-      // (file editor + usage get evicted), then the drawer renders
-      // whatever `sessionStore.loadReplay` produces.
+      // Keep the replay in the surface stack so it opens above any existing
+      // canvas-gap page and exposes the page below again when closed.
       openSessions();
       loadReplay(filePath);
     },

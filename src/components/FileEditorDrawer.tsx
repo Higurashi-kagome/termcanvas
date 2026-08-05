@@ -10,6 +10,8 @@ import {
   useCanvasStore,
   COLLAPSED_TAB_WIDTH,
   PIN_DRAWER_WIDTH,
+  getCanvasSurfaceZIndex,
+  isCanvasSurfaceActive,
 } from "../stores/canvasStore";
 import { usePinStore } from "../stores/pinStore";
 import {
@@ -213,6 +215,7 @@ function isReadSuccess(r: FileReadResult): r is FileReadSuccess {
 export function FileEditorDrawer() {
   const t = useT();
   const path = useCanvasStore((s) => s.fileEditorPath);
+  const surfaceStack = useCanvasStore((s) => s.surfaceStack);
   const expanded = useCanvasStore((s) => s.fileEditorExpanded);
   const close = useCanvasStore((s) => s.closeFileEditor);
   const toggleExpanded = useCanvasStore((s) => s.toggleFileEditorExpanded);
@@ -236,6 +239,9 @@ export function FileEditorDrawer() {
 
   const dirty = content !== originalContent;
   const open = path !== null;
+  const surfaceActive =
+    open && isCanvasSurfaceActive(surfaceStack, "file");
+  const surfaceZIndex = getCanvasSurfaceZIndex(surfaceStack, "file");
 
   // Only animate width/right during the brief window after the user
   // toggles maximize/restore OR opens/closes the task drawer (which
@@ -341,7 +347,7 @@ export function FileEditorDrawer() {
   // the drawer is open. Capture phase so Monaco's internal shortcut
   // binding doesn't eat Cmd+S first.
   useEffect(() => {
-    if (!open) return;
+    if (!surfaceActive) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -358,7 +364,7 @@ export function FileEditorDrawer() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, handleSave, handleClose]);
+  }, [surfaceActive, handleSave, handleClose]);
 
   if (!open || !path) return null;
 
@@ -385,8 +391,9 @@ export function FileEditorDrawer() {
 
   return (
     <div
-      className="tc-enter-fade-up fixed z-50 bg-[var(--bg)] border-l border-r border-[var(--border)] flex flex-col"
+      className="tc-enter-fade-up fixed bg-[var(--bg)] border-l border-r border-[var(--border)] flex flex-col"
       style={{
+        zIndex: surfaceZIndex,
         top: TOOLBAR_HEIGHT,
         right: rightInset,
         height: `calc(100vh - ${TOOLBAR_HEIGHT}px)`,
@@ -395,8 +402,10 @@ export function FileEditorDrawer() {
         transition: animateLayout
           ? `width ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}, right ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}`
           : undefined,
+        pointerEvents: surfaceActive ? "auto" : "none",
       }}
       role="dialog"
+      aria-hidden={!surfaceActive}
       aria-modal="false"
       aria-label={fileName}
     >

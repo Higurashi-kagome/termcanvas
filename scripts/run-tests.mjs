@@ -20,6 +20,7 @@ const suites = {
     "tests/cli-launchers.test.ts",
     "tests/cli-registration.test.ts",
     "tests/hydra-project-enable.test.ts",
+    "tests/canvas-surface-stack.test.ts",
     "tests/pin-store.test.ts",
     "tests/pin-store-renderer.test.ts",
     "tests/pin-dispatch.test.ts",

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useUsageStore } from "../stores/usageStore";
-import { useCanvasStore, COLLAPSED_TAB_WIDTH } from "../stores/canvasStore";
+import {
+  useCanvasStore,
+  COLLAPSED_TAB_WIDTH,
+  PIN_DRAWER_WIDTH,
+  getCanvasSurfaceZIndex,
+  isCanvasSurfaceActive,
+} from "../stores/canvasStore";
+import { usePinStore } from "../stores/pinStore";
 import { useAuthStore } from "../stores/authStore";
 import { useQuotaStore } from "../stores/quotaStore";
 import { useCodexQuotaStore } from "../stores/codexQuotaStore";
@@ -388,12 +395,17 @@ function UsageRangeDashboard({
 
 export function UsageOverlay() {
   const open = useCanvasStore((s) => s.usageOverlayOpen);
+  const surfaceStack = useCanvasStore((s) => s.surfaceStack);
   const close = useCanvasStore((s) => s.closeUsageOverlay);
   const leftPanelCollapsed = useCanvasStore((s) => s.leftPanelCollapsed);
   const leftPanelWidth = useCanvasStore((s) => s.leftPanelWidth);
   const rightPanelCollapsed = useCanvasStore((s) => s.rightPanelCollapsed);
   const rightPanelWidth = useCanvasStore((s) => s.rightPanelWidth);
+  const taskDrawerOpen = usePinStore((s) => s.openProjectPath !== null);
   const t = useT();
+  const surfaceActive =
+    open && isCanvasSurfaceActive(surfaceStack, "usage");
+  const surfaceZIndex = getCanvasSurfaceZIndex(surfaceStack, "usage");
 
   const {
     summary,
@@ -425,11 +437,11 @@ export function UsageOverlay() {
   const prevDateRef = useRef(date);
   const [, setResizeTick] = useState(0);
   useEffect(() => {
-    if (!open) return;
+    if (!surfaceActive) return;
     const onResize = () => setResizeTick((n) => n + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [open]);
+  }, [surfaceActive]);
 
   useEffect(() => {
     if (prevDateRef.current !== date) {
@@ -496,7 +508,7 @@ export function UsageOverlay() {
   }, [summary?.totalCost, quotaOnCostChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!open) return;
+    if (!surfaceActive) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -506,7 +518,7 @@ export function UsageOverlay() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, close]);
+  }, [surfaceActive, close]);
 
   const handleDateChange = useCallback(
     (dateStr: string) => {
@@ -549,7 +561,9 @@ export function UsageOverlay() {
 
   if (!open) return null;
 
-  const leftInset = leftPanelCollapsed ? COLLAPSED_TAB_WIDTH : leftPanelWidth;
+  const leftInset =
+    (leftPanelCollapsed ? COLLAPSED_TAB_WIDTH : leftPanelWidth) +
+    (taskDrawerOpen ? PIN_DRAWER_WIDTH : 0);
   const rightInset = rightPanelCollapsed
     ? COLLAPSED_TAB_WIDTH
     : rightPanelWidth;
@@ -597,14 +611,17 @@ export function UsageOverlay() {
       a pane sandwiched between two user-resizable side panels.
     */
     <div
-      className="fixed z-[55] bg-[var(--bg)] overflow-y-auto usage-overlay-enter @container"
+      className="fixed bg-[var(--bg)] overflow-y-auto usage-overlay-enter @container"
       style={{
+        zIndex: surfaceZIndex,
         top: 44,
         left: leftInset,
         right: rightInset,
         height: "calc(100vh - 44px)",
+        pointerEvents: surfaceActive ? "auto" : "none",
       }}
       role="dialog"
+      aria-hidden={!surfaceActive}
       aria-modal="false"
       aria-label={t.usage_title}
     >

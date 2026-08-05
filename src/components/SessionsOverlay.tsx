@@ -3,6 +3,8 @@ import {
   useCanvasStore,
   COLLAPSED_TAB_WIDTH,
   PIN_DRAWER_WIDTH,
+  getCanvasSurfaceZIndex,
+  isCanvasSurfaceActive,
 } from "../stores/canvasStore";
 import { usePinStore } from "../stores/pinStore";
 import { useSessionStore } from "../stores/sessionStore";
@@ -22,15 +24,15 @@ import { SessionReplayView } from "./SessionReplayView";
  * the right edge of the left panel to show the transcript.
  *
  * Geometry mirrors FileEditorDrawer but anchored left:
- *   level-1: min(60vw, canvas-gap) — replay + other surfaces visible
+ *   level-1: min(60vw, canvas-gap) — replay with other surfaces retained below
  *   level-2: full canvas-gap — immersive read mode
  *
  * Both levels leave the right panel (Files/Diff/Git/Memory) visible,
  * so the user can cross-reference code against the replay.
  *
  * Sits in the same canvas-gap "slot" as Usage and FileEditorDrawer —
- * canvasStore enforces mutual exclusion so opening one closes the
- * others.
+ * canvasStore keeps their open order so closing the top page reveals
+ * the page below it.
  */
 
 const TOOLBAR_HEIGHT = 44;
@@ -44,6 +46,7 @@ const SESSIONS_MIN_GAP_PX = 640;
 
 export function SessionsOverlay() {
   const open = useCanvasStore((s) => s.sessionsOverlayOpen);
+  const surfaceStack = useCanvasStore((s) => s.surfaceStack);
   const expanded = useCanvasStore((s) => s.sessionsOverlayExpanded);
   const close = useCanvasStore((s) => s.closeSessionsOverlay);
   const toggleExpanded = useCanvasStore(
@@ -57,6 +60,9 @@ export function SessionsOverlay() {
   const replayTimeline = useSessionStore((s) => s.replayTimeline);
   const replayError = useSessionStore((s) => s.replayError);
   const t = useT();
+  const surfaceActive =
+    open && isCanvasSurfaceActive(surfaceStack, "sessions");
+  const surfaceZIndex = getCanvasSurfaceZIndex(surfaceStack, "sessions");
 
   // Only animate width/left during the brief window after the user
   // toggles maximize/restore OR opens/closes the task drawer (which
@@ -84,7 +90,7 @@ export function SessionsOverlay() {
   }, [expanded, taskDrawerOpen]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!surfaceActive) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         // No second step any more — the list lives in the left panel
@@ -96,7 +102,7 @@ export function SessionsOverlay() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, close]);
+  }, [surfaceActive, close]);
 
   if (!open) return null;
 
@@ -124,17 +130,20 @@ export function SessionsOverlay() {
 
   return (
     <div
-      className="fixed z-[55] bg-[var(--bg)] border-l border-r border-[var(--border)] shadow-2xl flex flex-col usage-overlay-enter"
+      className="fixed bg-[var(--bg)] border-l border-r border-[var(--border)] shadow-2xl flex flex-col usage-overlay-enter"
       style={{
+        zIndex: surfaceZIndex,
         top: TOOLBAR_HEIGHT,
         left: leftInset,
         height: `calc(100vh - ${TOOLBAR_HEIGHT}px)`,
         width: widthStyle,
+        pointerEvents: surfaceActive ? "auto" : "none",
         transition: animateLayout
           ? `width ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}, left ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}`
           : undefined,
       }}
       role="dialog"
+      aria-hidden={!surfaceActive}
       aria-modal="false"
       aria-label={t.sessions_tab}
     >

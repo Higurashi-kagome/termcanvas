@@ -5,6 +5,8 @@ import {
   useCanvasStore,
   COLLAPSED_TAB_WIDTH,
   PIN_DRAWER_WIDTH,
+  getCanvasSurfaceZIndex,
+  isCanvasSurfaceActive,
 } from "../stores/canvasStore";
 import { usePinStore } from "../stores/pinStore";
 import { usePinDragStore } from "../stores/pinDragStore";
@@ -49,6 +51,7 @@ function StatusBadge({ status }: { status: Pin["status"] }) {
 
 export function PinDetailDrawer() {
   const t = useT();
+  const surfaceStack = useCanvasStore((s) => s.surfaceStack);
   const leftPanelCollapsed = useCanvasStore((s) => s.leftPanelCollapsed);
   const leftPanelWidth = useCanvasStore((s) => s.leftPanelWidth);
   const rightPanelCollapsed = useCanvasStore((s) => s.rightPanelCollapsed);
@@ -91,6 +94,9 @@ export function PinDetailDrawer() {
   const isComposing = !pin && composingForPin !== null;
   const isOpen = pin !== null || isComposing;
   const isEditing = editing || isComposing;
+  const surfaceActive =
+    isOpen && isCanvasSurfaceActive(surfaceStack, "pin");
+  const surfaceZIndex = getCanvasSurfaceZIndex(surfaceStack, "pin");
 
   // Initialize blank fields when entering compose mode.
   useEffect(() => {
@@ -376,7 +382,7 @@ export function PinDetailDrawer() {
     handleCloseLightbox,
   };
   useEffect(() => {
-    if (!isOpen) return;
+    if (!surfaceActive) return;
     const handler = (e: KeyboardEvent) => {
       const k = keyboardRef.current;
       if (e.key === "Escape") {
@@ -401,7 +407,7 @@ export function PinDetailDrawer() {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isOpen, lightboxImage]);
+  }, [surfaceActive, lightboxImage]);
 
   // The detail drawer always renders to the right of the pin drawer,
   // so its left edge IS the drawer-aware left inset (left panel +
@@ -440,7 +446,7 @@ export function PinDetailDrawer() {
       <div
         className="fixed bg-[var(--bg)] border-l border-[var(--border)] flex flex-col overflow-hidden"
         style={{
-          zIndex: 45,
+          zIndex: surfaceZIndex,
           top: TOOLBAR_HEIGHT,
           left: effectiveLeftInset,
           height: `calc(100vh - ${TOOLBAR_HEIGHT}px)`,
@@ -453,9 +459,9 @@ export function PinDetailDrawer() {
             `left ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}, ` +
             `width ${PANEL_TRANSITION_DURATION_MS}ms ${PANEL_TRANSITION_EASING_CSS}`,
           boxShadow: "var(--shadow-elev-2)",
-          pointerEvents: isOpen ? "auto" : "none",
+          pointerEvents: surfaceActive ? "auto" : "none",
         }}
-        aria-hidden={!isOpen}
+        aria-hidden={!surfaceActive}
         role="dialog"
         aria-modal="false"
         aria-label={pin?.title ?? "Pin detail"}
