@@ -219,7 +219,7 @@ export function BottomToolbar() {
 
   return (
     <div
-      className="fixed left-1/2 -translate-x-1/2 z-[95] pointer-events-none"
+      className="fixed left-1/2 -translate-x-1/2 z-[35] pointer-events-none"
       style={{ bottom: bottomOffset }}
     >
       <div
